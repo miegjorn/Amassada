@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 amassada-core = { path = "../amassada-core" }
 tokio = { workspace = true }
-axum = { workspace = true }
+axum = { version = "0.7", features = ["ws"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
