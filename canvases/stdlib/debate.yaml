@@ -1,0 +1,45 @@
+id: debate
+version: "1.0.0"
+mode: auto
+selector:
+  description: "Two or more agents argue opposing positions; Moderator synthesises into a decision"
+  tags: [debate, argument, positions, pros-cons, decision, tradeoffs]
+  examples:
+    - "should we use microservices or a monolith?"
+    - "debate the tradeoffs of event sourcing"
+    - "argue for and against GraphQL"
+initial_participants:
+  - persona: moderator
+    domain: fondament/tech-moderator
+  - persona: builder
+    domain: fondament/senior-engineer
+  - persona: adversarial
+    domain: fondament/senior-engineer
+budget:
+  total_tokens: 100000
+  pools:
+    main_session: 80000
+    consultations: 15000
+    mod_whisper: 5000
+consultation:
+  max_turns: 2
+  min_response_tokens: 50
+rounds:
+  min: 2
+  max: 5
+  convergence_modifier: 0.8
+  context_window: 20
+human:
+  slot: false
+output:
+  format: markdown
+  sections:
+    - id: decision
+      title: "Decision"
+      required: true
+    - id: rationale
+      title: "Rationale"
+      required: true
+    - id: risks
+      title: "Risks & Mitigations"
+      required: false

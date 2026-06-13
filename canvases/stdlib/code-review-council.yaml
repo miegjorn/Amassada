@@ -1,0 +1,45 @@
+id: code-review-council
+version: "1.0.0"
+mode: auto
+selector:
+  description: "Multiple reviewers (security, perf, style) assess a code diff or PR"
+  tags: [code-review, security, performance, style, diff, pr]
+  examples:
+    - "review this pull request"
+    - "code review for the auth service changes"
+    - "security review of the payment module"
+initial_participants:
+  - persona: moderator
+    domain: fondament/tech-moderator
+  - persona: builder
+    domain: fondament/senior-engineer
+  - persona: breaker
+    domain: fondament/security-engineer
+budget:
+  total_tokens: 80000
+  pools:
+    main_session: 64000
+    consultations: 12000
+    mod_whisper: 4000
+consultation:
+  max_turns: 1
+  min_response_tokens: 30
+rounds:
+  min: 1
+  max: 3
+  convergence_modifier: 0.9
+  context_window: 15
+human:
+  slot: false
+output:
+  format: markdown
+  sections:
+    - id: summary
+      title: "Review Summary"
+      required: true
+    - id: issues
+      title: "Issues Found"
+      required: true
+    - id: recommendations
+      title: "Recommendations"
+      required: false

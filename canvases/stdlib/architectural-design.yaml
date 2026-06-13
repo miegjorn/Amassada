@@ -1,0 +1,47 @@
+id: architectural-design
+version: "1.0.0"
+mode: interactive
+selector:
+  description: "ADR-producing architecture design session; human holds final approval"
+  tags: [architecture, adr, design, technical-decision, system-design]
+  examples:
+    - "choose a database for the user service"
+    - "decide on the messaging strategy between services"
+initial_participants:
+  - persona: moderator
+    domain: fondament/tech-moderator
+  - persona: builder
+    domain: fondament/senior-engineer
+  - persona: adversarial
+    domain: fondament/senior-engineer
+  - persona: human
+    authority: binding
+budget:
+  total_tokens: 200000
+  pools:
+    main_session: 160000
+    consultations: 30000
+    mod_whisper: 10000
+consultation:
+  max_turns: 3
+  min_response_tokens: 50
+rounds:
+  min: 3
+  max: 10
+  convergence_modifier: 0.7
+  context_window: 30
+human:
+  slot: true
+  advisory_window_turns: 2
+output:
+  format: markdown
+  sections:
+    - id: context
+      title: "Context & Problem Statement"
+      required: true
+    - id: decision
+      title: "Decision"
+      required: true
+    - id: consequences
+      title: "Consequences"
+      required: true
