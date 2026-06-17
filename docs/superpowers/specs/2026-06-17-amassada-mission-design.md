@@ -25,18 +25,7 @@ Canvases become **strategy presets** — named starting points the meta-moderato
 
 ### Mission
 
-Top-level unit of work above a Session. Contains the goal, a verifiable completion condition, sub-objectives, budget, and the record of sessions run.
-
-```rust
-pub struct Mission {
-    pub id: String,
-    pub goal: String,                    // intent — what we're trying to achieve
-    pub completion_condition: String,    // verifiable end state the evaluator checks
-    pub sub_objectives: Vec<SubObjective>,
-    pub budget: MissionBudget,
-    pub sessions_run: Vec<SessionRecord>,
-}
-```
+Top-level unit of work above a Session. `MissionEngine` is the mission — it holds goal, completion condition, sub-objectives, budget, session history, and the runtime fields needed to run it. There is no separate inert `Mission` data struct.
 
 **`goal`** is human-readable intent ("help the team decide on the auth approach").  
 **`completion_condition`** is what a lightweight evaluator can judge from artifacts ("a decision doc exists naming one chosen approach with rationale and trade-offs listed").
@@ -164,6 +153,7 @@ pub struct MissionEngine {
     pub sub_objectives: Vec<SubObjective>,
     pub budget: MissionBudget,
     pub sessions_run: Vec<SessionRecord>,
+    replan_counts: HashMap<String, u32>,   // sub_objective_id → replan attempts
     transport: Box<dyn Transport>,
     evaluator: Evaluator,
 }
@@ -203,7 +193,8 @@ SUB-OBJECTIVES
 
 BUDGET
   deployable: {deployable_spent} / {deployable} tokens used
-  discretionary: {discretionary_total_spent} / {discretionary} tokens used
+  discretionary strategize: {discretionary_strategize_spent} / {discretionary} tokens used
+  discretionary evaluate: {discretionary_evaluate_spent} / {discretionary} tokens used
   sessions run: {sessions_run.len()}
 
 SESSIONS RUN
@@ -235,8 +226,15 @@ MissionEngine::run()
       
       Optionally inject prior session artifact into goal context
         (if plan.prior_artifact_inject && sessions_run.last().artifact.is_some()).
+        Injection format: the prior artifact text is prepended to the session goal as:
+          "PRIOR SESSION OUTPUT:\n{artifact}\n\nYOUR GOAL:\n{goal}"
       
-      SessionEngine::run(canvas, goal=sub_objective.description, budget=plan.budget_slice)
+      Session goal string: plan.expected_artifact_description (the meta-moderator's stated
+        expectation for this session), not the sub-objective description directly. This lets
+        the meta-moderator refine the framing per-session when one session targets multiple
+        sub-objectives.
+      
+      SessionEngine::run(canvas, goal=plan.expected_artifact_description, budget=plan.budget_slice)
         → SessionOutput { artifacts, tokens_spent }
       
       Record SessionRecord. Update deployable_spent.
@@ -272,7 +270,9 @@ MissionEngine::run()
 
 3. MISSION COMPLETION CHECK
    All sub-objectives Complete or OutOfScope?
-     → Evaluator::check(mission.completion_condition, all_artifacts_concatenated)
+     → Evaluator::check(mission.completion_condition, all_artifacts_in_order)
+        where all_artifacts_in_order = sessions_run artifacts joined as:
+          "SESSION {n} ({canvas_id}):\n{artifact}\n\n---\n\n"
      → satisfied: → COMPLETING
      → not satisfied: meta-moderator extends pipeline (new sub-objectives + plans).
                       Push to pending_plans. Continue loop.
@@ -310,8 +310,8 @@ pub enum FargaVerdict {
 
 pub struct FargaContribution {
     pub title: String,
-    pub narrative: String,             // synthesized by meta-moderator
-    pub artifacts: Vec<SessionArtifact>,
+    pub narrative: String,              // synthesized by meta-moderator
+    pub artifacts: Vec<SessionArtifact>, // existing type from amassada-core::types
     pub metadata: MissionMetadata,
 }
 
@@ -359,7 +359,7 @@ pub enum MissionEvent {
     EvaluationFailed { sub_objective_id: String, reason: String },
     Replanning { reason: String },
     MissionCompleted { verdict: FargaVerdict, metadata: MissionMetadata },
-    MissionExhausted { completed: Vec<String>, remaining: Vec<String> },
+    MissionExhausted { completed: Vec<String>, remaining: Vec<String> },  // sub-objective IDs
 }
 ```
 
