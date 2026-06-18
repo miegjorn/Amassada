@@ -273,7 +273,11 @@ impl MissionEngine {
 
         // If all failing objectives are now out of scope, no replan needed
         let still_pending = failed_obj_ids.iter().any(|id| {
-            self.sub_objectives.iter().any(|o| &o.id == id && o.status != SubObjectiveStatus::OutOfScope)
+            self.sub_objectives.iter().any(|o| {
+                &o.id == id
+                    && (o.status == SubObjectiveStatus::Pending
+                        || o.status == SubObjectiveStatus::InProgress)
+            })
         });
         if !still_pending {
             return Ok(vec![]);
@@ -480,7 +484,9 @@ mod tests {
             EvaluationResult { satisfied: false, reason: "nope".into() },
             EvaluationResult { satisfied: false, reason: "mission not met".into() },
         ]);
-        // Meta returns one plan per replan (3 replans before hitting limit)
+        // strategize=index0 ([attempt 1]), first replan=index1 ([attempt 2]),
+        // second replan=index2 ([attempt 3]), third replan: count=3 → OutOfScope
+        // → returns [] without calling meta (no index 3 needed)
         let meta = MockMetaModerator::new(
             vec![
                 vec![make_plan("attempt 1")],
@@ -502,6 +508,7 @@ mod tests {
 
         let outcome = engine.run(|_| Some(Canvas::from_yaml(stub_canvas_yaml()).unwrap())).await.unwrap();
 
-        assert!(outcome.exhausted || engine.sub_objectives[0].status == SubObjectiveStatus::OutOfScope);
+        assert_eq!(engine.sub_objectives[0].status, SubObjectiveStatus::OutOfScope);
+        assert!(outcome.exhausted);
     }
 }
