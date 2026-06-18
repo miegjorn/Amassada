@@ -563,4 +563,76 @@ mod tests {
         assert_eq!(engine.sessions_run.len(), 1, "only session 1 should have run");
         assert_eq!(outcome.completed_sub_objective_ids, vec!["obj-1"]);
     }
+
+    #[tokio::test]
+    async fn e2e_two_session_mission_with_replan() {
+        // obj-1: first session fails eval, replan swaps canvas, second session satisfies both obj-1 and obj-2
+        // mission condition: satisfied by combined artifacts
+        let plan_initial = SessionPlan {
+            canvas_id: "debate".into(),
+            sub_objective_ids: vec!["obj-1".into()],
+            budget_slice: 15_000,
+            expected_artifact_description: "surface trade-offs".into(),
+            prior_artifact_inject: false,
+        };
+        let plan_replan = SessionPlan {
+            canvas_id: "design-session".into(),
+            sub_objective_ids: vec!["obj-1".into(), "obj-2".into()],
+            budget_slice: 20_000,
+            expected_artifact_description: "structured decision with rationale".into(),
+            prior_artifact_inject: true,
+        };
+
+        let runner = MockSessionRunner::new(vec![
+            stub_session_output("JWT vs sessions: JWT stateless but hard to revoke."),
+            stub_session_output("Decision: JWT. Rationale: stateless for our scale."),
+        ]);
+        let evaluator = MockEvaluator::new(vec![
+            // Session 1 → obj-1 check: fail
+            EvaluationResult { satisfied: false, reason: "no decision made, only comparison".into() },
+            // Session 2 → obj-1 check: pass
+            EvaluationResult { satisfied: true, reason: "decision with rationale present".into() },
+            // Session 2 → obj-2 check: pass
+            EvaluationResult { satisfied: true, reason: "rationale documented".into() },
+            // Mission condition check: pass
+            EvaluationResult { satisfied: true, reason: "both objectives met".into() },
+        ]);
+        let meta = MockMetaModerator::new(
+            vec![vec![plan_initial], vec![plan_replan]],
+            FargaVerdict::Submit {
+                contribution: crate::mission::types::FargaContribution {
+                    title: "Auth decision: JWT".into(),
+                    narrative: "Team decided on JWT after a comparison and structured decision session.".into(),
+                    artifacts: vec![],
+                    metadata: MissionMetadata {
+                        mission_id: String::new(), goal: String::new(),
+                        sessions_run: 2, canvas_types: vec!["debate".into(), "design-session".into()],
+                        sub_objectives_completed: 2, total_tokens_spent: 0, duration_secs: 0,
+                    },
+                }
+            },
+        );
+
+        let mut engine = MissionEngine::new(
+            "decide on auth approach".into(),
+            "one approach chosen with rationale".into(),
+            vec![make_sub_obj("obj-1"), make_sub_obj("obj-2")],
+            100_000,
+            Box::new(runner),
+            Box::new(evaluator),
+            Box::new(meta),
+        );
+
+        let outcome = engine.run(|_| Some(Canvas::from_yaml(stub_canvas_yaml()).unwrap())).await.unwrap();
+
+        assert!(!outcome.exhausted, "should not be exhausted");
+        assert_eq!(engine.sessions_run.len(), 2);
+        assert_eq!(*engine.replan_counts.get("obj-1").unwrap(), 1);
+        assert_eq!(outcome.completed_sub_objective_ids.len(), 2);
+        assert!(matches!(outcome.verdict, FargaVerdict::Submit { .. }));
+
+        // Metadata should be patched from engine state
+        assert_eq!(outcome.metadata.sessions_run, 2);
+        assert_eq!(outcome.metadata.sub_objectives_completed, 2);
+    }
 }
