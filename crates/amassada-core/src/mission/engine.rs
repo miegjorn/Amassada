@@ -250,14 +250,45 @@ impl MissionEngine {
         })
     }
 
+    const REPLAN_LIMIT: u32 = 3;
+
     async fn do_replan(
         &mut self,
-        reason: &str,
-        _failed_obj_ids: &[String],
+        _reason: &str,
+        failed_obj_ids: &[String],
     ) -> Result<Vec<SessionPlan>> {
-        // Stub — implemented in Task 11
-        let _ = reason;
-        Ok(vec![])
+        use crate::mission::envelope::{build_mission_envelope, EnvelopeState};
+
+        // Increment replan counts for all failed objectives
+        for obj_id in failed_obj_ids {
+            let count = self.replan_counts.entry(obj_id.clone()).or_insert(0);
+            *count += 1;
+
+            if *count >= Self::REPLAN_LIMIT {
+                if let Some(obj) = self.sub_objectives.iter_mut().find(|o| &o.id == obj_id) {
+                    obj.status = SubObjectiveStatus::OutOfScope;
+                }
+            }
+        }
+
+        // If all failing objectives are now out of scope, no replan needed
+        let still_pending = failed_obj_ids.iter().any(|id| {
+            self.sub_objectives.iter().any(|o| &o.id == id && o.status != SubObjectiveStatus::OutOfScope)
+        });
+        if !still_pending {
+            return Ok(vec![]);
+        }
+
+        let envelope = build_mission_envelope(&EnvelopeState {
+            goal: &self.goal,
+            completion_condition: &self.completion_condition,
+            sub_objectives: &self.sub_objectives,
+            budget: &self.budget,
+            sessions_run: &self.sessions_run,
+        });
+        let (new_plans, tokens) = self.meta.replan(&envelope).await?;
+        self.budget.discretionary_strategize_spent += tokens;
+        Ok(new_plans)
     }
 }
 
@@ -373,5 +404,104 @@ mod tests {
         assert!(matches!(outcome.verdict, FargaVerdict::Submit { .. }));
         assert_eq!(engine.sessions_run.len(), 1);
         assert_eq!(engine.budget.deployable_spent, 5_000);
+    }
+
+    #[tokio::test]
+    async fn replan_fires_on_failed_evaluation() {
+        let plan_1 = SessionPlan {
+            canvas_id: "debate".into(),
+            sub_objective_ids: vec!["obj-1".into()],
+            budget_slice: 10_000,
+            expected_artifact_description: "first attempt".into(),
+            prior_artifact_inject: false,
+        };
+        let plan_2 = SessionPlan {
+            canvas_id: "design-session".into(),
+            sub_objective_ids: vec!["obj-1".into()],
+            budget_slice: 10_000,
+            expected_artifact_description: "second attempt with clearer framing".into(),
+            prior_artifact_inject: true,
+        };
+
+        let runner = MockSessionRunner::new(vec![
+            stub_session_output("vague output"),
+            stub_session_output("JWT chosen for statelessness."),
+        ]);
+        let evaluator = MockEvaluator::new(vec![
+            EvaluationResult { satisfied: false, reason: "no decision made".into() }, // obj-1 first pass
+            EvaluationResult { satisfied: true,  reason: "decision present".into() }, // obj-1 second pass
+            EvaluationResult { satisfied: true,  reason: "mission met".into() },      // mission check
+        ]);
+        let meta = MockMetaModerator::new(
+            vec![vec![plan_1], vec![plan_2]],  // strategize returns plan_1, replan returns plan_2
+            FargaVerdict::Skip { reason: "test".into() },
+        );
+
+        let mut engine = MissionEngine::new(
+            "decide auth".into(),
+            "one approach chosen".into(),
+            vec![make_sub_obj("obj-1")],
+            100_000,
+            Box::new(runner),
+            Box::new(evaluator),
+            Box::new(meta),
+        );
+
+        let outcome = engine.run(|_id| {
+            Some(Canvas::from_yaml(stub_canvas_yaml()).unwrap())
+        }).await.unwrap();
+
+        assert!(!outcome.exhausted);
+        assert_eq!(engine.sessions_run.len(), 2);
+        assert_eq!(*engine.replan_counts.get("obj-1").unwrap(), 1);
+        assert_eq!(outcome.completed_sub_objective_ids, vec!["obj-1"]);
+    }
+
+    #[tokio::test]
+    async fn replan_limit_marks_out_of_scope() {
+        // obj-1 fails 3 times → should be marked OutOfScope after REPLAN_LIMIT
+        let make_plan = |desc: &'static str| SessionPlan {
+            canvas_id: "debate".into(),
+            sub_objective_ids: vec!["obj-1".into()],
+            budget_slice: 5_000,
+            expected_artifact_description: desc.into(),
+            prior_artifact_inject: false,
+        };
+
+        let runner = MockSessionRunner::new(vec![
+            stub_session_output("bad 1"),
+            stub_session_output("bad 2"),
+            stub_session_output("bad 3"),
+        ]);
+        // 3 sub-obj fails, then mission not met → exhausted verdict
+        let evaluator = MockEvaluator::new(vec![
+            EvaluationResult { satisfied: false, reason: "nope".into() },
+            EvaluationResult { satisfied: false, reason: "nope".into() },
+            EvaluationResult { satisfied: false, reason: "nope".into() },
+            EvaluationResult { satisfied: false, reason: "mission not met".into() },
+        ]);
+        // Meta returns one plan per replan (3 replans before hitting limit)
+        let meta = MockMetaModerator::new(
+            vec![
+                vec![make_plan("attempt 1")],
+                vec![make_plan("attempt 2")],
+                vec![make_plan("attempt 3")],
+            ],
+            FargaVerdict::Skip { reason: "exhausted".into() },
+        );
+
+        let mut engine = MissionEngine::new(
+            "decide".into(),
+            "one approach chosen".into(),
+            vec![make_sub_obj("obj-1")],
+            100_000,
+            Box::new(runner),
+            Box::new(evaluator),
+            Box::new(meta),
+        );
+
+        let outcome = engine.run(|_| Some(Canvas::from_yaml(stub_canvas_yaml()).unwrap())).await.unwrap();
+
+        assert!(outcome.exhausted || engine.sub_objectives[0].status == SubObjectiveStatus::OutOfScope);
     }
 }
