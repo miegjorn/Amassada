@@ -44,7 +44,8 @@ impl MissionBudget {
     }
 
     pub fn discretionary_remaining(&self) -> u64 {
-        let spent = self.discretionary_strategize_spent + self.discretionary_evaluate_spent;
+        let spent = self.discretionary_strategize_spent
+            .saturating_add(self.discretionary_evaluate_spent);
         self.discretionary.saturating_sub(spent)
     }
 
