@@ -511,4 +511,56 @@ mod tests {
         assert_eq!(engine.sub_objectives[0].status, SubObjectiveStatus::OutOfScope);
         assert!(outcome.exhausted);
     }
+
+    #[tokio::test]
+    async fn budget_exhaustion_before_second_session() {
+        let plan_1 = SessionPlan {
+            canvas_id: "debate".into(),
+            sub_objective_ids: vec!["obj-1".into()],
+            budget_slice: 75_000,
+            expected_artifact_description: "analysis".into(),
+            prior_artifact_inject: false,
+        };
+        let plan_2 = SessionPlan {
+            canvas_id: "design-session".into(),
+            sub_objective_ids: vec!["obj-2".into()],
+            budget_slice: 10_000,  // exceeds remaining deployable after session 1 spent 75_000
+            expected_artifact_description: "decision".into(),
+            prior_artifact_inject: false,
+        };
+
+        // Session 1 spends 75_000 tokens — leaving only 5_000 deployable remaining
+        let runner = MockSessionRunner::new(vec![
+            SessionOutput {
+                session_id: "s1".into(),
+                canvas_id: "debate".into(),
+                goal: "test".into(),
+                artifacts: vec![OutputArtifact {
+                    id: "a1".into(), title: "R".into(),
+                    content: "partial work done".into(), required: true,
+                }],
+                total_tokens: 75_000,
+            }
+        ]);
+        let evaluator = MockEvaluator::new(vec![
+            EvaluationResult { satisfied: true, reason: "obj-1 done".into() },
+        ]);
+        let meta = MockMetaModerator::new(
+            vec![vec![plan_1, plan_2]],
+            FargaVerdict::Skip { reason: "exhausted".into() },
+        );
+
+        let mut engine = MissionEngine::new(
+            "decide".into(), "all done".into(),
+            vec![make_sub_obj("obj-1"), make_sub_obj("obj-2")],
+            100_000,
+            Box::new(runner), Box::new(evaluator), Box::new(meta),
+        );
+
+        let outcome = engine.run(|_| Some(Canvas::from_yaml(stub_canvas_yaml()).unwrap())).await.unwrap();
+
+        assert!(outcome.exhausted, "should be exhausted when plan_2 exceeds remaining budget");
+        assert_eq!(engine.sessions_run.len(), 1, "only session 1 should have run");
+        assert_eq!(outcome.completed_sub_objective_ids, vec!["obj-1"]);
+    }
 }
