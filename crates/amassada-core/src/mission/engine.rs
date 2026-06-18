@@ -87,6 +87,7 @@ impl MissionEngine {
             let canvas = canvas_lookup(&plan.canvas_id)
                 .ok_or_else(|| crate::error::AmassadaError::CanvasNotFound(plan.canvas_id.clone()))?;
             let canvas = scale_canvas_budget(canvas, plan.budget_slice);
+            let canvas_id = canvas.id.clone(); // extract before move into runner.run
 
             // Build session goal — with optional prior artifact injection
             let session_goal = if plan.prior_artifact_inject {
@@ -102,7 +103,7 @@ impl MissionEngine {
             };
 
             // RUNNING
-            let output = self.runner.run(canvas.clone(), session_goal).await?;
+            let output = self.runner.run(canvas, session_goal).await?;
             let artifact_text = output.artifacts.iter()
                 .map(|a| format!("# {}\n{}", a.title, a.content))
                 .collect::<Vec<_>>()
@@ -115,22 +116,31 @@ impl MissionEngine {
             let mut first_fail_reason = String::new();
 
             for obj_id in &plan.sub_objective_ids {
-                if let Some(obj) = self.sub_objectives.iter_mut().find(|o| &o.id == obj_id) {
-                    if obj.status == SubObjectiveStatus::Complete {
-                        continue;
-                    }
-                    obj.status = SubObjectiveStatus::InProgress;
-                    let eval = self.evaluator.check(&obj.completion_condition, &artifact_text).await?;
-                    self.budget.discretionary_evaluate_spent += 50; // Haiku eval est.
-                    obj.last_eval_reason = Some(eval.reason.clone());
-
-                    if eval.satisfied {
-                        obj.status = SubObjectiveStatus::Complete;
-                        obj.output = Some(artifact_text.clone());
-                    } else {
+                match self.sub_objectives.iter_mut().find(|o| &o.id == obj_id) {
+                    None => {
+                        // ID in plan not found in sub_objectives — treat as unsatisfied
                         all_satisfied = false;
                         if first_fail_reason.is_empty() {
-                            first_fail_reason = format!("{}: {}", obj_id, eval.reason);
+                            first_fail_reason = format!("{}: unknown sub-objective id", obj_id);
+                        }
+                    }
+                    Some(obj) => {
+                        if obj.status == SubObjectiveStatus::Complete {
+                            continue;
+                        }
+                        obj.status = SubObjectiveStatus::InProgress;
+                        let eval = self.evaluator.check(&obj.completion_condition, &artifact_text).await?;
+                        self.budget.discretionary_evaluate_spent += 50; // Haiku eval est.
+                        obj.last_eval_reason = Some(eval.reason.clone());
+
+                        if eval.satisfied {
+                            obj.status = SubObjectiveStatus::Complete;
+                            obj.output = Some(artifact_text.clone());
+                        } else {
+                            all_satisfied = false;
+                            if first_fail_reason.is_empty() {
+                                first_fail_reason = format!("{}: {}", obj_id, eval.reason);
+                            }
                         }
                     }
                 }
@@ -144,7 +154,7 @@ impl MissionEngine {
             };
             self.sessions_run.push(SessionRecord {
                 session_id: output.session_id.clone(),
-                canvas_id: canvas.id.clone(),
+                canvas_id: canvas_id,
                 budget_allocated: plan.budget_slice,
                 budget_spent: tokens_spent,
                 sub_objective_ids: plan.sub_objective_ids.clone(),
