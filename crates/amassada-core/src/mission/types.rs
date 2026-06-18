@@ -104,6 +104,7 @@ pub enum FargaVerdict {
     Skip { reason: String },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MissionOutcome {
     pub mission_id: String,
     pub exhausted: bool,
