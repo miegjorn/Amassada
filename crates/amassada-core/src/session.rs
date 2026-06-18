@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use uuid::Uuid;
 use crate::budget::BudgetLedger;
 use crate::canvas::Canvas;
@@ -13,11 +14,11 @@ pub struct SessionEngine {
     pub session_id: String,
     pub canvas: Canvas,
     pub goal: String,
-    transport: Box<dyn Transport>,
+    transport: Arc<dyn Transport>,
 }
 
 impl SessionEngine {
-    pub fn new(canvas: Canvas, goal: String, transport: Box<dyn Transport>) -> Self {
+    pub fn new(canvas: Canvas, goal: String, transport: Arc<dyn Transport>) -> Self {
         Self {
             session_id: Uuid::new_v4().to_string(),
             canvas,
@@ -64,7 +65,7 @@ impl SessionEngine {
                 context_builder: &mut context_builder,
                 whisper_queue: &mut whisper_queue,
                 budget: &mut budget,
-                transport: self.transport.as_ref(),
+                transport: &*self.transport,
             };
 
             let result = runner.run().await?;

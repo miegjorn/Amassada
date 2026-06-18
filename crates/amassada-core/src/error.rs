@@ -14,6 +14,8 @@ pub enum AmassadaError {
     Transport(String),
     #[error("session error: {0}")]
     Session(String),
+    #[error("mission error: {0}")]
+    Mission(String),
 }
 
 pub type Result<T> = std::result::Result<T, AmassadaError>;

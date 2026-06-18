@@ -6,6 +6,7 @@ pub mod context;
 pub mod dispatch;
 pub mod error;
 pub mod moderator;
+pub mod mission;
 pub mod round;
 pub mod session;
 pub mod synthesis;
