@@ -156,5 +156,23 @@ mod tests {
         assert!(env.contains("SESSIONS RUN"), "missing SESSIONS RUN section");
         assert!(env.contains("s1 (debate)"), "missing session record");
         assert!(env.contains("satisfied"), "missing evaluation status");
+        assert!(env.contains("output: JWT vs sessions"), "missing obj output line");
+    }
+
+    #[test]
+    fn truncate_handles_boundaries() {
+        // String shorter than max — returned unchanged
+        assert_eq!(truncate("short", 200), "short");
+        // String of exactly max length — returned unchanged
+        let exact = "a".repeat(200);
+        assert_eq!(truncate(&exact, 200), exact.as_str());
+        // String longer than max — truncated at char boundary
+        let long = "a".repeat(300);
+        let t = truncate(&long, 200);
+        assert_eq!(t.len(), 200);
+        // Multi-byte chars — no panic, truncates at char boundary
+        let unicode = "é".repeat(300);
+        let tu = truncate(&unicode, 200);
+        assert_eq!(tu.chars().count(), 200);
     }
 }
