@@ -1,27 +1,25 @@
-use amassada_core::dispatch::{TurnRequest, build_system_prompt};
+use amassada_core::dispatch::{TurnRequest, build_system_prompt, effective_max_tokens};
 
 #[test]
-fn turn_request_default_has_no_thinking_budget() {
-    let req = TurnRequest {
-        system_prompt: "You are helpful.".into(),
-        context: "Hello".into(),
-        model: "claude-sonnet-4-6".into(),
-        max_tokens: 1000,
-        thinking_budget: None,
-    };
-    assert!(req.thinking_budget.is_none());
+fn effective_max_tokens_no_budget_returns_original() {
+    assert_eq!(effective_max_tokens(4096, None), 4096);
 }
 
 #[test]
-fn turn_request_can_set_thinking_budget() {
-    let req = TurnRequest {
-        system_prompt: "You are helpful.".into(),
-        context: "Hello".into(),
-        model: "claude-sonnet-4-6".into(),
-        max_tokens: 1000,
-        thinking_budget: Some(6000),
-    };
-    assert_eq!(req.thinking_budget, Some(6000));
+fn effective_max_tokens_budget_zero_treated_as_no_budget() {
+    assert_eq!(effective_max_tokens(4096, Some(0)), 4096);
+}
+
+#[test]
+fn effective_max_tokens_small_budget_clamps_to_budget_plus_1024() {
+    // budget=6000, original max_tokens=4096 → needs 6000+1024=7024
+    assert_eq!(effective_max_tokens(4096, Some(6000)), 7024);
+}
+
+#[test]
+fn effective_max_tokens_large_max_tokens_wins() {
+    // original max_tokens already exceeds budget+1024
+    assert_eq!(effective_max_tokens(10000, Some(6000)), 10000);
 }
 
 #[test]
@@ -35,5 +33,5 @@ fn build_system_prompt_includes_persona_and_domain() {
 fn build_system_prompt_moderator_includes_close_block() {
     let prompt = build_system_prompt("orchestrator", "You moderate.", true);
     assert!(prompt.contains("[CLOSE]"));
-    assert!(prompt.contains("[INVITE:"));
+    assert!(prompt.contains("[INVITE: <agent-id>]"));
 }

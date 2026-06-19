@@ -16,26 +16,32 @@ pub struct TurnResponse {
     pub output_tokens: u32,
 }
 
+/// Returns the effective max_tokens for an API call, clamping upward when
+/// extended thinking is active (budget > 0). Exported so tests can verify
+/// the clamping logic directly.
+pub fn effective_max_tokens(max_tokens: u32, thinking_budget: Option<u32>) -> u32 {
+    match thinking_budget.filter(|&b| b > 0) {
+        Some(budget) => max_tokens.max(budget + 1024),
+        None => max_tokens,
+    }
+}
+
 /// Calls the Anthropic Messages API directly via reqwest.
 /// Uses the user-message-only format (no prefill, no multi-turn list).
 pub async fn dispatch(req: TurnRequest) -> Result<TurnResponse> {
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .map_err(|_| AmassadaError::Dispatch("ANTHROPIC_API_KEY not set".into()))?;
 
-    let effective_max_tokens = if let Some(budget) = req.thinking_budget {
-        req.max_tokens.max(budget + 1024)
-    } else {
-        req.max_tokens
-    };
+    let max_tokens = effective_max_tokens(req.max_tokens, req.thinking_budget);
 
     let mut body = serde_json::json!({
         "model": req.model,
-        "max_tokens": effective_max_tokens,
+        "max_tokens": max_tokens,
         "system": req.system_prompt,
         "messages": [{"role": "user", "content": req.context}]
     });
 
-    if let Some(budget) = req.thinking_budget {
+    if let Some(budget) = req.thinking_budget.filter(|&b| b > 0) {
         body["thinking"] = serde_json::json!({"type": "enabled", "budget_tokens": budget});
     }
 
@@ -46,7 +52,7 @@ pub async fn dispatch(req: TurnRequest) -> Result<TurnResponse> {
         .header("anthropic-version", "2023-06-01")
         .header("content-type", "application/json");
 
-    if req.thinking_budget.is_some() {
+    if req.thinking_budget.filter(|&b| b > 0).is_some() {
         request_builder = request_builder.header("anthropic-beta", "interleaved-thinking-2025-05-14");
     }
 
@@ -129,10 +135,5 @@ You MUST structure responses using these block markers:
 "#
     };
 
-    format!(
-        "You are a {persona} agent.\n\n{domain_context}\n\n{block_syntax}",
-        persona = persona,
-        domain_context = domain_context,
-        block_syntax = block_syntax,
-    )
+    format!("You are a {persona} agent.\n\n{domain_context}\n\n{block_syntax}")
 }
