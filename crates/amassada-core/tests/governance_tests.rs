@@ -1,7 +1,7 @@
 use amassada_core::governance::{
     RiskFactors, RiskScore, RiskTier, RiskWeights, TierThresholds, compute_risk_score,
     GovernanceConfig, BudgetEnvelope, SessionComposition, check_constitution, compose_session,
-    ConstitutionViolation,
+    ConstitutionViolation, address_to_participant, compose_governance_canvas,
 };
 
 fn default_weights() -> RiskWeights {
@@ -287,4 +287,104 @@ fn governance_deliberation_canvas_parses() {
     assert!(!canvas.output.sections.is_empty(), "output must have sections");
     let has_moderator = canvas.initial_participants.iter().any(|p| p.is_moderator());
     assert!(has_moderator, "canvas must include a moderator participant");
+}
+
+// ── Task 1: room.rs tests ─────────────────────────────────────────────────────
+
+fn governance_canvas() -> Canvas {
+    Canvas::from_yaml(
+        include_str!("../../../canvases/stdlib/governance-deliberation.yaml")
+    ).unwrap()
+}
+
+fn make_composition_for_room(
+    primary: Vec<String>,
+    override_addr: Option<String>,
+    recommended: u32,
+    minimum: u32,
+) -> SessionComposition {
+    SessionComposition {
+        risk_score: 0.5,
+        tier: RiskTier::Medium,
+        primary_session: primary,
+        counter_session: None,
+        budget: BudgetEnvelope { recommended_tokens: recommended, minimum_tokens: minimum },
+        moderator_override: override_addr,
+    }
+}
+
+#[test]
+fn address_to_participant_parses_generic_stance() {
+    let p = address_to_participant("stances/realist");
+    assert_eq!(p.persona, "realist");
+    assert_eq!(p.domain, "stances/realist");
+    assert!(p.model.is_none());
+    assert!(p.authority.is_none());
+}
+
+#[test]
+fn address_to_participant_parses_project_specific() {
+    let p = address_to_participant("auth-service+adversarial");
+    assert_eq!(p.persona, "adversarial");
+    assert_eq!(p.domain, "auth-service+adversarial");
+}
+
+#[test]
+fn address_to_participant_parses_moderator_slot() {
+    let p = address_to_participant("stances/moderator");
+    assert!(p.is_moderator());
+    assert_eq!(p.domain, "stances/moderator");
+}
+
+#[test]
+fn compose_governance_canvas_replaces_participants() {
+    let base = governance_canvas();
+    let primary = vec![
+        "stances/realist".into(),
+        "stances/adversarial".into(),
+        "stances/moderator".into(),
+    ];
+    let comp = make_composition_for_room(primary, None, 5000, 2000);
+    let result = compose_governance_canvas(base, &comp);
+    assert_eq!(result.initial_participants.len(), 3);
+    assert_eq!(result.initial_participants[0].persona, "realist");
+    assert_eq!(result.initial_participants[1].persona, "adversarial");
+    assert!(result.initial_participants[2].is_moderator());
+}
+
+#[test]
+fn compose_governance_canvas_scales_budget() {
+    let base = governance_canvas(); // total_tokens = 15000
+    let comp = make_composition_for_room(vec!["stances/moderator".into()], None, 5000, 2000);
+    let result = compose_governance_canvas(base, &comp);
+    assert_eq!(result.budget.total_tokens, 5000);
+}
+
+#[test]
+fn compose_governance_canvas_applies_moderator_override() {
+    let base = governance_canvas();
+    let comp = make_composition_for_room(
+        vec!["stances/realist".into(), "stances/moderator".into()],
+        Some("special-projects+moderator".into()),
+        5000,
+        2000,
+    );
+    let result = compose_governance_canvas(base, &comp);
+    let mod_p = result.initial_participants.iter().find(|p| p.is_moderator()).unwrap();
+    assert_eq!(mod_p.domain, "special-projects+moderator");
+    assert_eq!(mod_p.persona, "moderator");
+}
+
+#[test]
+fn compose_governance_canvas_no_override_keeps_original_moderator_domain() {
+    let base = governance_canvas();
+    let comp = make_composition_for_room(
+        vec!["stances/moderator".into()],
+        None,
+        5000,
+        2000,
+    );
+    let result = compose_governance_canvas(base, &comp);
+    let mod_p = result.initial_participants.iter().find(|p| p.is_moderator()).unwrap();
+    assert_eq!(mod_p.domain, "stances/moderator");
 }
