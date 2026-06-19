@@ -1,5 +1,7 @@
 use amassada_core::governance::{
-    RiskFactors, RiskTier, RiskWeights, TierThresholds, compute_risk_score, GovernanceConfig,
+    RiskFactors, RiskScore, RiskTier, RiskWeights, TierThresholds, compute_risk_score,
+    GovernanceConfig, BudgetEnvelope, SessionComposition, check_constitution, compose_session,
+    ConstitutionViolation,
 };
 
 fn default_weights() -> RiskWeights {
@@ -165,4 +167,109 @@ fn governance_config_weights_sum_to_one() {
 fn governance_config_from_yaml_rejects_empty_string() {
     let result = GovernanceConfig::from_yaml("");
     assert!(result.is_err(), "empty YAML should fail to parse");
+}
+
+// ── Task 3: compose_session tests ─────────────────────────────────────────────
+
+fn default_config() -> GovernanceConfig {
+    GovernanceConfig::default_weights()
+}
+
+fn risk_score(tier: RiskTier, score: f32) -> RiskScore {
+    RiskScore { score, tier }
+}
+
+#[test]
+fn low_tier_produces_no_counter_session() {
+    let rs = risk_score(RiskTier::Low, 0.20);
+    let comp = compose_session(&rs, &["auth".into()], &default_config());
+    assert_eq!(comp.tier, RiskTier::Low);
+    assert!(comp.counter_session.is_none());
+    assert_eq!(comp.primary_session.len(), 3, "Low tier: realist, realist, moderator");
+}
+
+#[test]
+fn medium_tier_produces_no_counter_session() {
+    let rs = risk_score(RiskTier::Medium, 0.40);
+    let comp = compose_session(&rs, &[], &default_config());
+    assert_eq!(comp.tier, RiskTier::Medium);
+    assert!(comp.counter_session.is_none());
+    assert_eq!(comp.primary_session.len(), 4, "Medium tier: realist, adversarial, builder, moderator");
+}
+
+#[test]
+fn high_tier_produces_counter_session() {
+    let rs = risk_score(RiskTier::High, 0.65);
+    let comp = compose_session(&rs, &[], &default_config());
+    assert_eq!(comp.tier, RiskTier::High);
+    assert!(comp.counter_session.is_some());
+    let counter = comp.counter_session.as_ref().unwrap();
+    assert_eq!(counter.len(), 2, "Counter: builder, dreamer");
+}
+
+#[test]
+fn critical_tier_produces_counter_session() {
+    let rs = risk_score(RiskTier::Critical, 0.90);
+    let comp = compose_session(&rs, &[], &default_config());
+    assert_eq!(comp.tier, RiskTier::Critical);
+    assert!(comp.counter_session.is_some());
+    assert_eq!(comp.primary_session.len(), 6, "Critical primary: adversarial, adversarial, realist, builder, dreamer, moderator");
+}
+
+#[test]
+fn involved_projects_fill_non_moderator_slots_first() {
+    let rs = risk_score(RiskTier::High, 0.65);
+    let projects = vec!["auth-service".into(), "api-gateway".into()];
+    let comp = compose_session(&rs, &projects, &default_config());
+    assert!(comp.primary_session[0].contains("auth-service"), "first slot: {}", comp.primary_session[0]);
+    assert!(comp.primary_session[1].contains("api-gateway"), "second slot: {}", comp.primary_session[1]);
+    assert!(comp.primary_session[2].starts_with("stances/"), "third slot falls back to generic: {}", comp.primary_session[2]);
+    assert_eq!(comp.primary_session.last().unwrap(), "stances/moderator");
+}
+
+#[test]
+fn moderator_slot_always_generic() {
+    let rs = risk_score(RiskTier::Critical, 0.85);
+    let projects: Vec<String> = (0..10).map(|i| format!("proj-{}", i)).collect();
+    let comp = compose_session(&rs, &projects, &default_config());
+    assert_eq!(comp.primary_session.last().unwrap(), "stances/moderator");
+}
+
+#[test]
+fn constitution_passes_for_high_with_counter() {
+    let comp = SessionComposition {
+        risk_score: 0.65,
+        tier: RiskTier::High,
+        primary_session: vec!["stances/adversarial".into()],
+        counter_session: Some(vec!["stances/builder".into()]),
+        budget: BudgetEnvelope { recommended_tokens: 8000, minimum_tokens: 8000 },
+        moderator_override: None,
+    };
+    assert!(check_constitution(&comp).is_ok());
+}
+
+#[test]
+fn constitution_fails_for_high_without_counter() {
+    let comp = SessionComposition {
+        risk_score: 0.65,
+        tier: RiskTier::High,
+        primary_session: vec!["stances/adversarial".into()],
+        counter_session: None,
+        budget: BudgetEnvelope { recommended_tokens: 8000, minimum_tokens: 8000 },
+        moderator_override: None,
+    };
+    assert!(check_constitution(&comp).is_err());
+}
+
+#[test]
+fn constitution_passes_for_low_without_counter() {
+    let comp = SessionComposition {
+        risk_score: 0.20,
+        tier: RiskTier::Low,
+        primary_session: vec!["stances/realist".into()],
+        counter_session: None,
+        budget: BudgetEnvelope { recommended_tokens: 2000, minimum_tokens: 2000 },
+        moderator_override: None,
+    };
+    assert!(check_constitution(&comp).is_ok());
 }
