@@ -59,7 +59,7 @@ impl<'a> RoundRunner<'a> {
             );
 
             let model = participant.model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_string());
-            let req = TurnRequest { system_prompt, context, model, max_tokens: MAX_TOKENS_PER_TURN, thinking_budget: participant.thinking_budget };
+            let req = TurnRequest { system_prompt, context, model, max_tokens: MAX_TOKENS_PER_TURN, thinking_budget: participant.thinking_budget, api_key: None };
 
             let response = dispatch::dispatch(req).await?;
             let tokens_used = response.input_tokens + response.output_tokens;

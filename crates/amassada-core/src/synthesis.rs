@@ -36,6 +36,7 @@ pub async fn synthesize_artifacts(
                 model: SYNTHESIS_MODEL.to_string(),
                 max_tokens: 2048,
                 thinking_budget: None,
+                api_key: None,
             };
             let response = dispatch::dispatch(req).await?;
             Ok::<OutputArtifact, crate::error::AmassadaError>(OutputArtifact {

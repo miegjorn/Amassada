@@ -7,6 +7,9 @@ pub struct TurnRequest {
     pub model: String,
     pub max_tokens: u32,
     pub thinking_budget: Option<u32>,
+    /// API key to use. When None, falls back to ANTHROPIC_API_KEY env var.
+    /// Set by callers that resolve credentials via Gardian.
+    pub api_key: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -29,8 +32,9 @@ pub fn effective_max_tokens(max_tokens: u32, thinking_budget: Option<u32>) -> u3
 /// Calls the Anthropic Messages API directly via reqwest.
 /// Uses the user-message-only format (no prefill, no multi-turn list).
 pub async fn dispatch(req: TurnRequest) -> Result<TurnResponse> {
-    let api_key = std::env::var("ANTHROPIC_API_KEY")
-        .map_err(|_| AmassadaError::Dispatch("ANTHROPIC_API_KEY not set".into()))?;
+    let api_key = req.api_key.clone()
+        .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
+        .ok_or_else(|| AmassadaError::Dispatch("ANTHROPIC_API_KEY not set".into()))?;
 
     let max_tokens = effective_max_tokens(req.max_tokens, req.thinking_budget);
 
