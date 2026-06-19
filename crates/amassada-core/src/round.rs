@@ -24,11 +24,12 @@ pub struct RoundRunner<'a> {
 pub struct RoundResult {
     pub should_close: bool,
     pub approval_requested: Option<String>,
+    pub canvas_switch: Option<String>,
 }
 
 impl<'a> RoundRunner<'a> {
     pub async fn run(&mut self) -> Result<RoundResult> {
-        let mut result = RoundResult { should_close: false, approval_requested: None };
+        let mut result = RoundResult { should_close: false, approval_requested: None, canvas_switch: None };
 
         self.transport.broadcast(&SessionEvent::RoundStarted { round: self.round_num }).await?;
 
@@ -105,13 +106,46 @@ impl<'a> RoundRunner<'a> {
                     self.whisper_queue,
                 );
 
-                for event in exec_result.events {
-                    self.transport.broadcast(&event).await?;
+                for event in &exec_result.events {
+                    self.transport.broadcast(event).await?;
                 }
 
                 if exec_result.should_close { result.should_close = true; }
                 if let Some(reason) = exec_result.approval_requested {
                     result.approval_requested = Some(reason);
+                }
+                if let Some(id) = exec_result.canvas_switch {
+                    result.canvas_switch = Some(id);
+                }
+
+                // Execute pending forks asynchronously
+                for (agent_a, agent_b, topic) in exec_result.pending_forks {
+                    let (persona, domain) = self.participants.iter()
+                        .find(|p| p.persona == agent_b || p.agent_id.to_string().starts_with(&agent_b))
+                        .map(|p| (p.persona.clone(), p.domain.clone()))
+                        .unwrap_or_else(|| (agent_b.clone(), String::new()));
+
+                    let system_prompt = dispatch::build_system_prompt(&persona, &domain, false);
+                    let req = dispatch::TurnRequest {
+                        system_prompt,
+                        context: format!("SIDEBAR QUESTION from {}:\n{}", agent_a, topic),
+                        model: DEFAULT_MODEL.to_string(),
+                        max_tokens: 1024,
+                        thinking_budget: None,
+                        api_key: None,
+                    };
+
+                    if let Ok(resp) = dispatch::dispatch(req).await {
+                        let a_id = AgentId::new(&agent_a);
+                        let b_id = AgentId::new(&agent_b);
+                        let msg = crate::types::WhisperMsg {
+                            from: b_id,
+                            content: format!("[sidebar] {}: {}", agent_b, resp.text),
+                            timestamp: Utc::now(),
+                        };
+                        let _ = self.transport.whisper(&a_id, &msg).await;
+                        self.whisper_queue.enqueue(a_id, msg);
+                    }
                 }
             }
 

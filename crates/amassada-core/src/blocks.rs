@@ -17,6 +17,7 @@ pub enum ModeratorAction {
     RequestApproval { reason: String },
     SetModel { model: String, for_agent: String },
     Close,
+    SwitchCanvas { canvas_id: String },
 }
 
 #[derive(Debug, Clone)]
@@ -96,6 +97,10 @@ pub fn parse_blocks(input: &str, is_moderator: bool) -> ParsedResponse {
                     });
                 }
                 i += 1;
+            } else if line.starts_with("[SWITCH_CANVAS:") {
+                let id = line.trim_start_matches("[SWITCH_CANVAS:").trim_end_matches(']').trim().to_string();
+                moderator_actions.push(ModeratorAction::SwitchCanvas { canvas_id: id });
+                i += 1;
             } else {
                 i += 1;
             }
@@ -119,7 +124,7 @@ fn extract_param(line: &str, prefix: &str) -> Option<String> {
 fn collect_until_next_block(lines: &[&str], start: usize) -> String {
     let block_starters = ["[MAIN]", "[BTW to:", "[CONSULT to:", "[LEAVE]",
         "[INVITE:", "[RELEASE:", "[CLOSE]", "[REQUEST_APPROVAL:", "[ADJUST_BUDGET:",
-        "[MODEL:", "[FORK_CONSULTATION:"];
+        "[MODEL:", "[FORK_CONSULTATION:", "[SWITCH_CANVAS:"];
     let mut content_lines = Vec::new();
     for &line in &lines[start..] {
         let trimmed = line.trim();

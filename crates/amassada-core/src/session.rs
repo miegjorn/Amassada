@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 use crate::budget::BudgetLedger;
@@ -15,6 +16,7 @@ pub struct SessionEngine {
     pub canvas: Canvas,
     pub goal: String,
     transport: Arc<dyn Transport>,
+    canvas_library: HashMap<String, Canvas>,
 }
 
 impl SessionEngine {
@@ -24,17 +26,26 @@ impl SessionEngine {
             canvas,
             goal,
             transport,
+            canvas_library: HashMap::new(),
         }
     }
 
+    pub fn with_canvas_library(mut self, library: HashMap<String, Canvas>) -> Self {
+        self.canvas_library = library;
+        self
+    }
+
     pub async fn run(&self) -> Result<SessionOutput> {
+        // Use a local mutable canvas so hot-switch mid-session is possible
+        let mut active_canvas = self.canvas.clone();
+
         self.transport.broadcast(&SessionEvent::SessionStarted {
-            canvas_id: self.canvas.id.clone(),
+            canvas_id: active_canvas.id.clone(),
             goal: self.goal.clone(),
         }).await?;
 
         // Assemble participants from canvas definitions
-        let mut participants: Vec<ActiveParticipant> = self.canvas.initial_participants.iter()
+        let mut participants: Vec<ActiveParticipant> = active_canvas.initial_participants.iter()
             .enumerate()
             .map(|(i, def)| ActiveParticipant {
                 agent_id: AgentId::new(&format!("{}-{}", def.persona, i)),
@@ -48,19 +59,19 @@ impl SessionEngine {
             .collect();
 
         let mut budget = BudgetLedger::new(
-            self.canvas.budget.total_tokens,
-            self.canvas.budget.pools.main_session,
-            self.canvas.budget.pools.consultations,
-            self.canvas.budget.pools.mod_whisper,
+            active_canvas.budget.total_tokens,
+            active_canvas.budget.pools.main_session,
+            active_canvas.budget.pools.consultations,
+            active_canvas.budget.pools.mod_whisper,
         );
 
-        let mut context_builder = ContextBuilder::new(self.canvas.rounds.context_window);
+        let mut context_builder = ContextBuilder::new(active_canvas.rounds.context_window);
         let mut whisper_queue = WhisperQueue::new();
 
         let mut state = SessionState::Running;
         let mut current_round = 1u32;
 
-        while !state.is_terminal() && current_round <= self.canvas.rounds.max {
+        while !state.is_terminal() && current_round <= active_canvas.rounds.max {
             let mut runner = RoundRunner {
                 round_num: current_round,
                 participants: &mut participants,
@@ -71,6 +82,28 @@ impl SessionEngine {
             };
 
             let result = runner.run().await?;
+
+            // Apply canvas hot-switch if requested
+            if let Some(new_canvas_id) = result.canvas_switch {
+                if let Some(new_canvas) = self.canvas_library.get(&new_canvas_id) {
+                    active_canvas = new_canvas.clone();
+                    // Re-initialize participants from new canvas
+                    participants = active_canvas.initial_participants.iter()
+                        .enumerate()
+                        .map(|(i, def)| ActiveParticipant {
+                            agent_id: AgentId::new(&format!("{}-{}", def.persona, i)),
+                            persona: def.persona.clone(),
+                            domain: def.domain.clone(),
+                            turns_taken: 0,
+                            is_moderator: def.is_moderator(),
+                            model: def.model.clone(),
+                            thinking_budget: def.thinking_budget,
+                        })
+                        .collect();
+                } else {
+                    tracing::warn!("SWITCH_CANVAS: canvas '{}' not found in library", new_canvas_id);
+                }
+            }
 
             if let Some(_reason) = result.approval_requested {
                 state = SessionState::AwaitingApproval;
@@ -94,7 +127,7 @@ impl SessionEngine {
                 }
             }
 
-            if result.should_close || current_round >= self.canvas.rounds.min {
+            if result.should_close || current_round >= active_canvas.rounds.min {
                 if result.should_close { break; }
             }
 
@@ -106,9 +139,9 @@ impl SessionEngine {
         self.transport.broadcast(&SessionEvent::SynthesisStarted).await?;
 
         let artifacts = synthesize_artifacts(
-            &self.canvas.output.sections,
+            &active_canvas.output.sections,
             &context_builder,
-            &self.canvas.id,
+            &active_canvas.id,
             &self.goal,
         ).await?;
 
@@ -123,7 +156,7 @@ impl SessionEngine {
 
         let output = SessionOutput {
             session_id: self.session_id.clone(),
-            canvas_id: self.canvas.id.clone(),
+            canvas_id: active_canvas.id.clone(),
             goal: self.goal.clone(),
             artifacts,
             total_tokens: 0, // TODO: sum from budget ledger

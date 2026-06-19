@@ -11,6 +11,8 @@ pub struct ExecutionResult {
     pub new_participants: Vec<AgentId>,
     pub released: Vec<AgentId>,
     pub events: Vec<SessionEvent>,
+    pub canvas_switch: Option<String>,
+    pub pending_forks: Vec<(String, String, String)>,
 }
 
 impl ModeratorExecutor {
@@ -28,6 +30,8 @@ impl ModeratorExecutor {
             new_participants: Vec::new(),
             released: Vec::new(),
             events: Vec::new(),
+            canvas_switch: None,
+            pending_forks: Vec::new(),
         };
 
         for action in actions {
@@ -79,8 +83,15 @@ impl ModeratorExecutor {
                     });
                 }
                 ModeratorAction::ForkConsultation { agent_a, agent_b, topic } => {
+                    result.pending_forks.push((agent_a.clone(), agent_b.clone(), topic.clone()));
                     result.events.push(SessionEvent::ModeratorAction {
                         action: format!("FORK_CONSULTATION {} {} {}", agent_a, agent_b, topic)
+                    });
+                }
+                ModeratorAction::SwitchCanvas { canvas_id } => {
+                    result.canvas_switch = Some(canvas_id.clone());
+                    result.events.push(SessionEvent::ModeratorAction {
+                        action: format!("SWITCH_CANVAS {}", canvas_id)
                     });
                 }
             }

@@ -1,6 +1,7 @@
 pub mod blocks;
 pub mod budget;
 pub mod canvas;
+pub mod canvas_library;
 pub mod channels;
 pub mod context;
 pub mod dispatch;

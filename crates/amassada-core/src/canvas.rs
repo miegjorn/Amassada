@@ -101,7 +101,7 @@ impl Canvas {
 }
 
 pub struct CanvasLibrary {
-    canvases: Vec<Canvas>,
+    pub(crate) canvases: Vec<Canvas>,
 }
 
 impl CanvasLibrary {
@@ -130,7 +130,7 @@ impl CanvasLibrary {
 
     /// Heuristic selector: score by keyword overlap between query and canvas metadata.
     /// Returns the best-match canvas and a confidence score in [0, 1].
-    /// In production, replace with a lightweight LLM call.
+    /// Use `select_canvas_with_llm` for a smarter selection.
     pub fn select(&self, query: &str) -> (&Canvas, f32) {
         let query_lower = query.to_lowercase();
         let query_words: Vec<&str> = query_lower.split_whitespace().collect();
@@ -158,5 +158,37 @@ impl CanvasLibrary {
         }
 
         (&self.canvases[best_idx], best_score.max(0.0))
+    }
+}
+
+/// Asks Haiku to pick the best canvas for `query` from the provided library.
+/// Returns the canvas id of the best match, falling back to sync heuristic on error.
+pub async fn select_canvas_with_llm(query: &str, library: &CanvasLibrary) -> String {
+    use crate::dispatch::{dispatch, TurnRequest};
+
+    let menu: Vec<String> = library.canvases.iter()
+        .map(|c| format!("- id: {}\n  description: {}\n  tags: {}",
+            c.id, c.selector.description, c.selector.tags.join(", ")))
+        .collect();
+    let menu_text = menu.join("\n");
+
+    let system = "You are a canvas selector. Given a user request and a list of available canvases, \
+        respond with ONLY the id of the best-matching canvas. No explanation, no punctuation — just the id.";
+    let context = format!("REQUEST:\n{}\n\nAVAILABLE CANVASES:\n{}", query, menu_text);
+
+    match dispatch(TurnRequest {
+        system_prompt: system.into(),
+        context,
+        model: "claude-haiku-4-5-20251001".into(),
+        max_tokens: 32,
+        thinking_budget: None,
+        api_key: None,
+    }).await {
+        Ok(resp) => {
+            let id = resp.text.trim().to_string();
+            if library.get(&id).is_some() { id }
+            else { library.select(query).0.id.clone() } // fallback
+        }
+        Err(_) => library.select(query).0.id.clone(), // fallback
     }
 }

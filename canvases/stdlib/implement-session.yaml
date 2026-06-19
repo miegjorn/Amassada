@@ -1,7 +1,6 @@
 id: implement-session
 version: "1.0.0"
 mode: auto
-
 selector:
   description: "Implementation session — developer and QA work through a task with design artifacts as input"
   tags: [implementation, coding, developer, qa, testing, tasks]
@@ -9,28 +8,24 @@ selector:
     - "implement this task from the design"
     - "build this component according to the ADR"
     - "implement and define test plan for this feature"
-
 initial_participants:
-  - role: moderator
-    agent: fondament/tech-moderator
-  - role: participant
-    agent: fondament/developer
-  - role: participant
-    agent: fondament/qa-engineer
-  - role: human
+  - persona: moderator
+    domain: fondament/tech-moderator
+  - persona: developer
+    domain: fondament/developer
+  - persona: qa
+    domain: fondament/qa-engineer
+  - persona: human
     authority: binding
-
 budget:
-  total_tokens: 150_000
+  total_tokens: 150000
   pools:
-    main_session:  120_000
-    consultations:  22_500
-    mod_whisper:     7_500
-
+    main_session: 120000
+    consultations: 22500
+    mod_whisper: 7500
 consultation:
   max_turns: 2
   min_response_tokens: 50
-
 rounds:
   min: 2
   max: 4
@@ -39,15 +34,12 @@ rounds:
 human:
   slot: true
   advisory_window_turns: 1
-
 output:
   format: markdown
-  artifacts:
+  sections:
     - id: implementation-notes
       title: "Implementation Notes"
       required: true
-      description: "Decisions made, edge cases handled, deviations from design"
     - id: test-plan
       title: "Test Plan"
       required: true
-      description: "Test cases, coverage targets, QA sign-off criteria"

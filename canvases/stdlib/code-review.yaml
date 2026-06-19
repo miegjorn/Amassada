@@ -1,7 +1,6 @@
 id: code-review
 version: "1.0.0"
 mode: auto
-
 selector:
   description: "Code review council — reviewer and security analyst assess a merge request"
   tags: [code-review, merge-request, pr, security, quality, review]
@@ -9,41 +8,35 @@ selector:
     - "review this merge request"
     - "code review for the auth module changes"
     - "security and quality review before merge"
-
 initial_participants:
-  - role: moderator
-    agent: fondament/review-moderator
-  - role: participant
-    agent: fondament/code-reviewer
-  - role: participant
-    agent: fondament/security-analyst
-  - role: human
+  - persona: moderator
+    domain: fondament/review-moderator
+  - persona: reviewer
+    domain: fondament/code-reviewer
+  - persona: security
+    domain: fondament/security-analyst
+  - persona: human
     authority: binding
-
 budget:
-  total_tokens: 150_000
+  total_tokens: 150000
   pools:
-    main_session:  120_000
-    consultations:  22_500
-    mod_whisper:     7_500
-
+    main_session: 120000
+    consultations: 22500
+    mod_whisper: 7500
 consultation:
   max_turns: 2
   min_response_tokens: 50
-
 rounds:
   min: 1
   max: 3
-  convergence_modifier: 0.75      # faster convergence — output is pass/fail + findings
+  convergence_modifier: 0.75
   context_window: 20
 human:
   slot: true
   advisory_window_turns: 1
-
 output:
   format: markdown
-  artifacts:
+  sections:
     - id: review-report
       title: "Review Report"
       required: true
-      description: "Verdict (approve/request-changes/reject), findings by severity, required actions"

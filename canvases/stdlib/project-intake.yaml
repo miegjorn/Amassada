@@ -1,7 +1,6 @@
 id: project-intake
 version: "1.0.0"
 mode: interactive
-
 selector:
   description: "Define a new project from a business idea or brief — produces artifacts consumed by design sessions"
   tags: [project, intake, planning, milestones, breakdown, discovery, requirements]
@@ -9,53 +8,44 @@ selector:
     - "I want to build a SaaS platform for X"
     - "we need to scope out a new feature for Y"
     - "turn this idea into a project plan with milestones and spikes"
-
 initial_participants:
-  - role: moderator
-    agent: fondament/project-moderator
-  - role: participant
-    agent: fondament/business-analyst
-  - role: participant
-    agent: fondament/app-architect
-  - role: human
+  - persona: moderator
+    domain: fondament/project-moderator
+  - persona: analyst
+    domain: fondament/business-analyst
+  - persona: architect
+    domain: fondament/app-architect
+  - persona: human
     authority: binding
-
 budget:
-  total_tokens: 600_000            # HARD LIMIT
+  total_tokens: 600000
   pools:
-    main_session:  480_000         # 80%
-    consultations:  90_000         # 15%
-    mod_whisper:    30_000         # 5%
-
+    main_session: 480000
+    consultations: 90000
+    mod_whisper: 30000
 consultation:
   max_turns: 2
-  min_response_tokens: 80          # intake needs substantive answers
-
+  min_response_tokens: 80
 rounds:
-  min: 3                           # discovery → refinement → validation
+  min: 3
   max: 8
-  convergence_modifier: 0.85       # high bar — all artifacts must be complete
+  convergence_modifier: 0.85
   context_window: 20
 human:
   slot: true
   advisory_window_turns: 1
-
 output:
   format: markdown
-  artifacts:
+  sections:
     - id: project-brief
       title: "Project Brief"
       required: true
-      description: "Goals, constraints, stakeholders, success criteria"
     - id: milestone-plan
       title: "Milestone Plan"
       required: true
-      description: "Ordered milestones with success criteria and dependencies"
     - id: spike-list
       title: "Spike List"
       required: true
-      description: "Technical unknowns requiring investigation before design"
     - id: task-breakdown
       title: "Initial Task Breakdown"
       required: true
-      description: "High-level tasks mapped to milestones, ready for design-session input"
