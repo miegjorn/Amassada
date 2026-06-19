@@ -25,9 +25,29 @@ pub struct GovernanceConfig {
     pub tier_minimums: TierMinimums,
 }
 
+#[derive(Deserialize)]
+struct GovernanceConfigFile {
+    governance: GovernanceConfigRaw,
+}
+
+#[derive(Deserialize)]
+struct GovernanceConfigRaw {
+    risk_weights: RiskWeights,
+    tier_thresholds: TierThresholds,
+    budget: GovernanceBudgetConfig,
+    tier_minimums: TierMinimums,
+}
+
 impl GovernanceConfig {
-    pub fn from_yaml(_yaml: &str) -> Result<Self> {
-        Err(AmassadaError::CanvasParse("not implemented".into()))
+    pub fn from_yaml(yaml: &str) -> Result<Self> {
+        let file: GovernanceConfigFile = serde_yaml::from_str(yaml)
+            .map_err(|e| AmassadaError::CanvasParse(e.to_string()))?;
+        Ok(Self {
+            risk_weights: file.governance.risk_weights,
+            tier_thresholds: file.governance.tier_thresholds,
+            budget: file.governance.budget,
+            tier_minimums: file.governance.tier_minimums,
+        })
     }
 
     pub fn default_weights() -> Self {
