@@ -57,6 +57,7 @@ impl CompletionEvaluator for ClaudeEvaluator {
             context,
             model: self.model.clone(),
             max_tokens: 256,
+            thinking_budget: None,
         }).await?;
 
         let val: serde_json::Value = serde_json::from_str(resp.text.trim())

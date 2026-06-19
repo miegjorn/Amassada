@@ -6,6 +6,7 @@ pub struct TurnRequest {
     pub context: String,
     pub model: String,
     pub max_tokens: u32,
+    pub thinking_budget: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -21,19 +22,35 @@ pub async fn dispatch(req: TurnRequest) -> Result<TurnResponse> {
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .map_err(|_| AmassadaError::Dispatch("ANTHROPIC_API_KEY not set".into()))?;
 
-    let body = serde_json::json!({
+    let effective_max_tokens = if let Some(budget) = req.thinking_budget {
+        req.max_tokens.max(budget + 1024)
+    } else {
+        req.max_tokens
+    };
+
+    let mut body = serde_json::json!({
         "model": req.model,
-        "max_tokens": req.max_tokens,
+        "max_tokens": effective_max_tokens,
         "system": req.system_prompt,
         "messages": [{"role": "user", "content": req.context}]
     });
 
+    if let Some(budget) = req.thinking_budget {
+        body["thinking"] = serde_json::json!({"type": "enabled", "budget_tokens": budget});
+    }
+
     let client = reqwest::Client::new();
-    let resp = client
+    let mut request_builder = client
         .post("https://api.anthropic.com/v1/messages")
         .header("x-api-key", &api_key)
         .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
+        .header("content-type", "application/json");
+
+    if req.thinking_budget.is_some() {
+        request_builder = request_builder.header("anthropic-beta", "interleaved-thinking-2025-05-14");
+    }
+
+    let resp = request_builder
         .json(&body)
         .send()
         .await
@@ -48,8 +65,10 @@ pub async fn dispatch(req: TurnRequest) -> Result<TurnResponse> {
     let json: serde_json::Value = resp.json().await
         .map_err(|e| AmassadaError::Dispatch(e.to_string()))?;
 
-    let text = json["content"][0]["text"]
-        .as_str()
+    let text = json["content"]
+        .as_array()
+        .and_then(|blocks| blocks.iter().find(|b| b["type"].as_str() == Some("text")))
+        .and_then(|b| b["text"].as_str())
         .unwrap_or("")
         .to_string();
 
