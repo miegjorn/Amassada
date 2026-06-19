@@ -273,3 +273,18 @@ fn constitution_passes_for_low_without_counter() {
     };
     assert!(check_constitution(&comp).is_ok());
 }
+
+// ── Task 4: canvas load test ──────────────────────────────────────────────────
+
+use amassada_core::canvas::Canvas;
+
+#[test]
+fn governance_deliberation_canvas_parses() {
+    let yaml = include_str!("../../../canvases/stdlib/governance-deliberation.yaml");
+    let canvas = Canvas::from_yaml(yaml).expect("governance-deliberation canvas must parse");
+    assert_eq!(canvas.id, "governance-deliberation");
+    assert!(canvas.human.slot, "governance sessions always have a human slot");
+    assert!(!canvas.output.sections.is_empty(), "output must have sections");
+    let has_moderator = canvas.initial_participants.iter().any(|p| p.is_moderator());
+    assert!(has_moderator, "canvas must include a moderator participant");
+}

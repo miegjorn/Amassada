@@ -1,0 +1,54 @@
+id: governance-deliberation
+version: "1.0.0"
+mode: auto
+selector:
+  description: "Governance deliberation on a proposed Fondament archetype change; risk-scored session composition"
+  tags: [governance, archetype, fondament, risk, deliberation, pattern]
+  examples:
+    - "deliberate on cross-project JWT signing standard"
+    - "governance review of a new agent role definition"
+    - "evaluate whether to standardize error handling across projects"
+initial_participants:
+  - persona: moderator
+    domain: stances/moderator
+  - persona: adversarial
+    domain: stances/adversarial
+  - persona: realist
+    domain: stances/realist
+  - persona: builder
+    domain: stances/builder
+budget:
+  total_tokens: 15000
+  pools:
+    main_session: 11000
+    consultations: 3000
+    mod_whisper: 1000
+consultation:
+  max_turns: 2
+  min_response_tokens: 50
+rounds:
+  min: 3
+  max: 6
+  convergence_modifier: 0.7
+  context_window: 20
+human:
+  slot: true
+  advisory_window_turns: 2
+output:
+  format: markdown
+  sections:
+    - id: proposed_change
+      title: "Proposed Archetype Change"
+      required: true
+    - id: risk_assessment
+      title: "Risk Assessment"
+      required: true
+    - id: agent_votes
+      title: "Agent Votes"
+      required: true
+    - id: impact_analysis
+      title: "Impact Analysis"
+      required: false
+    - id: recommendation
+      title: "Recommendation"
+      required: true
