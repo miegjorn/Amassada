@@ -107,4 +107,6 @@ pub struct ActiveParticipant {
     pub domain: String,
     pub turns_taken: u32,
     pub is_moderator: bool,
+    pub model: Option<String>,
+    pub thinking_budget: Option<u32>,
 }

@@ -15,6 +15,7 @@ pub fn address_to_participant(addr: &str) -> ParticipantDef {
         domain: addr.to_string(),
         model: None,
         authority: None,
+        thinking_budget: None,
     }
 }
 

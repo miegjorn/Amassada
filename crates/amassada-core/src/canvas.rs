@@ -36,6 +36,8 @@ pub struct ParticipantDef {
     pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub authority: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_budget: Option<u32>,
 }
 
 impl ParticipantDef {

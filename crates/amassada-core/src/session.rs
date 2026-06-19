@@ -42,6 +42,8 @@ impl SessionEngine {
                 domain: def.domain.clone(),
                 turns_taken: 0,
                 is_moderator: def.is_moderator(),
+                model: def.model.clone(),
+                thinking_budget: def.thinking_budget,
             })
             .collect();
 
