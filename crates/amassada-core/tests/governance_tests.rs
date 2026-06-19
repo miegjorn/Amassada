@@ -1,5 +1,5 @@
 use amassada_core::governance::{
-    RiskFactors, RiskScore, RiskTier, RiskWeights, TierThresholds, compute_risk_score,
+    RiskFactors, RiskTier, RiskWeights, TierThresholds, compute_risk_score,
 };
 
 fn default_weights() -> RiskWeights {
