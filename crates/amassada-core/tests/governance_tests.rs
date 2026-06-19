@@ -388,3 +388,137 @@ fn compose_governance_canvas_no_override_keeps_original_moderator_domain() {
     let mod_p = result.initial_participants.iter().find(|p| p.is_moderator()).unwrap();
     assert_eq!(mod_p.domain, "stances/moderator");
 }
+
+// ── Task 2: state.rs tests ────────────────────────────────────────────────────
+
+use amassada_core::governance::{GovernanceSessionState, init_governance_state};
+use amassada_core::mission::types::MissionBudget;
+
+fn mission_budget_with_remaining(remaining: u64) -> MissionBudget {
+    // MissionBudget::new(100_000) sets deployable = 80_000
+    // Spend down to leave exactly `remaining`
+    let mut b = MissionBudget::new(100_000);
+    b.deployable_spent = 80_000u64.saturating_sub(remaining);
+    b
+}
+
+fn low_tier_comp() -> amassada_core::governance::SessionComposition {
+    amassada_core::governance::SessionComposition {
+        risk_score: 0.20,
+        tier: amassada_core::governance::RiskTier::Low,
+        primary_session: vec![
+            "stances/realist".into(),
+            "stances/realist".into(),
+            "stances/moderator".into(),
+        ],
+        counter_session: None,
+        budget: amassada_core::governance::BudgetEnvelope {
+            recommended_tokens: 4000,
+            minimum_tokens: 2000,
+        },
+        moderator_override: None,
+    }
+}
+
+fn high_tier_comp() -> amassada_core::governance::SessionComposition {
+    amassada_core::governance::SessionComposition {
+        risk_score: 0.65,
+        tier: amassada_core::governance::RiskTier::High,
+        primary_session: vec![
+            "stances/adversarial".into(),
+            "stances/adversarial".into(),
+            "stances/realist".into(),
+            "stances/moderator".into(),
+        ],
+        counter_session: Some(vec![
+            "stances/builder".into(),
+            "stances/dreamer".into(),
+        ]),
+        budget: amassada_core::governance::BudgetEnvelope {
+            recommended_tokens: 15000,
+            minimum_tokens: 8000,
+        },
+        moderator_override: None,
+    }
+}
+
+#[test]
+fn init_governance_state_pending_when_budget_short() {
+    let budget = mission_budget_with_remaining(1000);
+    let comp = low_tier_comp();
+    let state = init_governance_state(comp, &budget, governance_canvas(), &default_config());
+    assert!(matches!(state, GovernanceSessionState::PendingBudget { .. }),
+        "expected PendingBudget when remaining < minimum");
+}
+
+#[test]
+fn init_governance_state_shortfall_is_correct() {
+    let budget = mission_budget_with_remaining(1000);
+    let comp = low_tier_comp();
+    let state = init_governance_state(comp, &budget, governance_canvas(), &default_config());
+    if let GovernanceSessionState::PendingBudget { shortfall, .. } = state {
+        assert_eq!(shortfall, 1000, "shortfall = minimum(2000) - remaining(1000) = 1000");
+    } else {
+        panic!("expected PendingBudget");
+    }
+}
+
+#[test]
+fn init_governance_state_active_when_budget_sufficient() {
+    let budget = mission_budget_with_remaining(10_000);
+    let comp = low_tier_comp();
+    let state = init_governance_state(comp, &budget, governance_canvas(), &default_config());
+    assert!(matches!(state, GovernanceSessionState::Active { .. }),
+        "expected Active when remaining >= minimum");
+}
+
+#[test]
+fn init_governance_state_exactly_at_minimum_is_active() {
+    let budget = mission_budget_with_remaining(2000);
+    let comp = low_tier_comp();
+    let state = init_governance_state(comp, &budget, governance_canvas(), &default_config());
+    assert!(matches!(state, GovernanceSessionState::Active { .. }),
+        "exactly meeting minimum should be Active");
+}
+
+#[test]
+fn init_governance_state_no_counter_for_low_tier() {
+    let budget = mission_budget_with_remaining(10_000);
+    let comp = low_tier_comp();
+    let state = init_governance_state(comp, &budget, governance_canvas(), &default_config());
+    if let GovernanceSessionState::Active { rooms, .. } = state {
+        assert!(rooms.counter.is_none(), "Low tier must have no counter canvas");
+    } else {
+        panic!("expected Active");
+    }
+}
+
+#[test]
+fn init_governance_state_has_counter_for_high_tier() {
+    let budget = mission_budget_with_remaining(20_000);
+    let comp = high_tier_comp();
+    let state = init_governance_state(comp, &budget, governance_canvas(), &default_config());
+    if let GovernanceSessionState::Active { rooms, .. } = state {
+        assert!(rooms.counter.is_some(), "High tier must have a counter canvas");
+        let counter = rooms.counter.unwrap();
+        assert_eq!(counter.initial_participants.len(), 2,
+            "Counter: builder and dreamer");
+        assert_eq!(counter.initial_participants[0].persona, "builder");
+        assert_eq!(counter.initial_participants[1].persona, "dreamer");
+    } else {
+        panic!("expected Active");
+    }
+}
+
+#[test]
+fn init_governance_state_primary_has_correct_participant_count() {
+    let budget = mission_budget_with_remaining(20_000);
+    let comp = high_tier_comp();
+    let state = init_governance_state(comp, &budget, governance_canvas(), &default_config());
+    if let GovernanceSessionState::Active { rooms, .. } = state {
+        assert_eq!(rooms.primary.initial_participants.len(), 4,
+            "High tier primary: adversarial, adversarial, realist, moderator");
+    } else {
+        panic!("expected Active");
+    }
+}
