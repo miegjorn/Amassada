@@ -5,6 +5,7 @@ pub mod channels;
 pub mod context;
 pub mod dispatch;
 pub mod error;
+pub mod governance;
 pub mod moderator;
 pub mod mission;
 pub mod round;
