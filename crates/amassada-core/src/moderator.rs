@@ -77,7 +77,11 @@ impl ModeratorExecutor {
                     });
                 }
                 ModeratorAction::SetModel { model, for_agent } => {
-                    // Model override recorded in SessionEvent — participant lookup is engine-level
+                    if let Some(p) = participants.iter_mut().find(|p| {
+                        p.persona == for_agent || p.agent_id.to_string() == for_agent
+                    }) {
+                        p.model = Some(model.clone());
+                    }
                     result.events.push(SessionEvent::ModeratorAction {
                         action: format!("MODEL {} for {}", model, for_agent)
                     });

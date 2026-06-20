@@ -160,6 +160,24 @@ impl<'a> RoundRunner<'a> {
                 }
             }
 
+            // CONSULT handling: deliver question as a whisper to the target agent
+            for block in &parsed.agent_blocks {
+                if let AgentBlock::Consult { to, content } = block {
+                    let to_id = AgentId::new(to);
+                    let msg = crate::types::WhisperMsg {
+                        from: agent_id.clone(),
+                        content: format!("[CONSULT from {}]: {}", participant.persona, content),
+                        timestamp: Utc::now(),
+                    };
+                    let _ = self.transport.whisper(&to_id, &msg).await;
+                    self.whisper_queue.enqueue(to_id.clone(), msg);
+                    self.transport.broadcast(&SessionEvent::ConsultationCompleted {
+                        requester: agent_id.clone(),
+                        consulted: to_id,
+                    }).await?;
+                }
+            }
+
             if result.should_close { break; }
         }
 
