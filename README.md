@@ -693,3 +693,19 @@ No integration tests make live API calls. `LocalTransport::new_test()` provides 
 Full rationale, channel diagrams, interaction primitive rules, and v2 roadmap:
 
 `docs/superpowers/specs/2026-06-12-amassada-design.md`
+
+---
+
+## Container image
+
+The Docker image builds from the repo root with `rust:1.90-slim` (the stdlib canvases are
+baked in at `/canvases/stdlib`):
+
+```sh
+docker build -t ghcr.io/occitan/amassada:latest .
+# local kind:
+kind load docker-image ghcr.io/occitan/amassada:latest --name occitan
+```
+
+`amassada-server` honours `AMASSADA_PORT` (defaults to `7700` in the chart). See
+`Caissa/docs/install.md` for the full-stack deploy.
