@@ -112,3 +112,102 @@ pub fn check_constitution(composition: &SessionComposition) -> Result<(), Consti
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::governance::config::{GovernanceConfig, GovernanceBudgetConfig, TierMinimums};
+    use crate::governance::risk::{RiskScore, RiskTier, RiskWeights, TierThresholds};
+
+    fn test_config() -> GovernanceConfig {
+        GovernanceConfig {
+            risk_weights: RiskWeights {
+                primitive_proximity: 0.25,
+                signal_concurrence: 0.20,
+                signal_velocity: 0.15,
+                reversibility: 0.20,
+                impact: 0.15,
+                precedent: 0.05,
+            },
+            tier_thresholds: TierThresholds { medium: 0.30, high: 0.55, critical: 0.80 },
+            budget: GovernanceBudgetConfig {
+                daily_tokens: 50_000,
+                per_session_cap: 15_000,
+                counter_session_cap: 10_000,
+            },
+            tier_minimums: TierMinimums { low: 2_000, medium: 5_000, high: 8_000, critical: 12_000 },
+        }
+    }
+
+    fn risk_score(tier: RiskTier) -> RiskScore {
+        let score = match tier {
+            RiskTier::Low => 0.10,
+            RiskTier::Medium => 0.40,
+            RiskTier::High => 0.65,
+            RiskTier::Critical => 0.90,
+        };
+        RiskScore { score, tier }
+    }
+
+    #[test]
+    fn low_and_medium_have_no_counter_session() {
+        let config = test_config();
+        for tier in [RiskTier::Low, RiskTier::Medium] {
+            let c = compose_session(&risk_score(tier), &[], &config);
+            assert!(
+                c.counter_session.is_none(),
+                "{:?} tier must not require counter-session", c.tier
+            );
+            check_constitution(&c).expect("constitution check must pass for Low/Medium");
+        }
+    }
+
+    #[test]
+    fn high_and_critical_require_counter_session() {
+        let config = test_config();
+        for tier in [RiskTier::High, RiskTier::Critical] {
+            let c = compose_session(&risk_score(tier.clone()), &[], &config);
+            assert!(
+                c.counter_session.is_some(),
+                "{:?} tier must have counter-session", tier
+            );
+            check_constitution(&c).expect("constitution check must pass for High/Critical");
+        }
+    }
+
+    #[test]
+    fn check_constitution_rejects_missing_counter_session_for_high() {
+        let composition = SessionComposition {
+            risk_score: 0.65,
+            tier: RiskTier::High,
+            primary_session: vec!["stances/adversarial".into()],
+            counter_session: None, // intentionally wrong
+            budget: BudgetEnvelope { recommended_tokens: 8_000, minimum_tokens: 8_000 },
+            moderator_override: None,
+        };
+        assert!(check_constitution(&composition).is_err());
+    }
+
+    #[test]
+    fn slot_resolution_fills_from_involved_projects_first() {
+        let config = test_config();
+        let projects = vec!["auth-service".to_string(), "api-gateway".to_string()];
+        let c = compose_session(&risk_score(RiskTier::High), &projects, &config);
+        // High tier: ["adversarial", "adversarial", "realist", "moderator"]
+        // First two adversarial slots → project+stance addresses
+        assert!(c.primary_session[0].starts_with("auth-service+"), "slot 0 = auth-service+adversarial");
+        assert!(c.primary_session[1].starts_with("api-gateway+"), "slot 1 = api-gateway+adversarial");
+        // Third slot (realist) has no project left → generic stance
+        assert!(c.primary_session[2].starts_with("stances/"), "slot 2 = generic stance");
+    }
+
+    #[test]
+    fn slot_resolution_falls_back_to_generic_when_projects_exhausted() {
+        let config = test_config();
+        // No projects — all slots fall back to generic stances
+        let c = compose_session(&risk_score(RiskTier::Medium), &[], &config);
+        for addr in &c.primary_session {
+            assert!(addr.starts_with("stances/"), "expected generic stance, got {}", addr);
+        }
+    }
+}
