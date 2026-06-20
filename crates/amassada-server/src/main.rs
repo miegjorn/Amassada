@@ -28,6 +28,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/sessions", post(api::start_session))
         .route("/state", get(api::get_state))
         .route("/human_input", post(api::post_human_input))
+        .route("/events", post(api::publish_event))
         .route("/ws", get(ws::ws_handler))
         .with_state(state);
 

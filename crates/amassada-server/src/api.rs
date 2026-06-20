@@ -51,3 +51,18 @@ pub async fn post_human_input(
     tracing::info!("human input received: {} — {}", req.kind, req.content);
     StatusCode::ACCEPTED
 }
+
+/// Accept an externally-produced `SessionEvent` and broadcast it to all WebSocket subscribers.
+/// This is how external processes (Caissa, cursor capture, etc.) publish into the event bus.
+pub async fn publish_event(
+    State(s): State<ServerState>,
+    Json(event): Json<SessionEvent>,
+) -> StatusCode {
+    match s.event_tx.send(event) {
+        Ok(_) => StatusCode::ACCEPTED,
+        Err(_) => {
+            // No active subscribers — not an error, just nothing to receive it yet.
+            StatusCode::ACCEPTED
+        }
+    }
+}
