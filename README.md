@@ -709,3 +709,6 @@ kind load docker-image ghcr.io/occitan/amassada:latest --name occitan
 
 `amassada-server` honours `AMASSADA_PORT` (defaults to `7700` in the chart). See
 `Caissa/docs/install.md` for the full-stack deploy.
+
+> **Prompt caching**: `dispatch.rs` sends Anthropic prompt-cache headers on agent turns,
+> reducing cost on repeated system-prompt content across multi-turn sessions.
