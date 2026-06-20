@@ -11,7 +11,7 @@ use tokio::sync::{broadcast, Mutex};
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
-    let port = std::env::var("AMASSADA_PORT").unwrap_or("7600".into());
+    let port = std::env::var("AMASSADA_PORT").unwrap_or("7700".into());
     let canvas_dir = std::env::var("AMASSADA_CANVAS_DIR")
         .unwrap_or("canvases/stdlib".into());
 
