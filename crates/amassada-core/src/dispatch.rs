@@ -38,10 +38,13 @@ pub async fn dispatch(req: TurnRequest) -> Result<TurnResponse> {
 
     let max_tokens = effective_max_tokens(req.max_tokens, req.thinking_budget);
 
+    // system as array-of-blocks so the API can cache the stable system prompt across
+    // turns. The cache breakpoint fires when the prompt exceeds 1024 tokens (large
+    // Fondament domain contexts); for smaller prompts the API ignores the hint silently.
     let mut body = serde_json::json!({
         "model": req.model,
         "max_tokens": max_tokens,
-        "system": req.system_prompt,
+        "system": [{"type": "text", "text": req.system_prompt, "cache_control": {"type": "ephemeral"}}],
         "messages": [{"role": "user", "content": req.context}]
     });
 
@@ -56,6 +59,8 @@ pub async fn dispatch(req: TurnRequest) -> Result<TurnResponse> {
         .header("anthropic-version", "2023-06-01")
         .header("content-type", "application/json");
 
+    // prompt-caching beta is always on; interleaved-thinking only when budgeted.
+    request_builder = request_builder.header("anthropic-beta", "prompt-caching-2024-07-31");
     if req.thinking_budget.filter(|&b| b > 0).is_some() {
         request_builder = request_builder.header("anthropic-beta", "interleaved-thinking-2025-05-14");
     }
