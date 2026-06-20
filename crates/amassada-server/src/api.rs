@@ -1,13 +1,14 @@
 use axum::{extract::State, http::StatusCode, Json};
-use amassada_core::types::SessionState;
+use amassada_core::types::{SessionState, SessionEvent};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{broadcast, Mutex};
 
 #[derive(Clone)]
 pub struct ServerState {
     pub canvas_dir: String,
     pub active_state: Arc<Mutex<SessionState>>,
+    pub event_tx: broadcast::Sender<SessionEvent>,
 }
 
 #[derive(Deserialize)]
