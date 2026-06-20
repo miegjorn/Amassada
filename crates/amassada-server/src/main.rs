@@ -21,6 +21,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let app = Router::new()
+        .route("/health", axum::routing::get(|| async { "ok" }))
         .route("/sessions", post(api::start_session))
         .route("/state", get(api::get_state))
         .route("/human_input", post(api::post_human_input))
