@@ -3,9 +3,9 @@ mod ws;
 
 use axum::{routing::{get, post}, Router};
 use api::ServerState;
-use amassada_core::types::SessionState;
+use amassada_core::types::{SessionState, SessionEvent};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{broadcast, Mutex};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -15,9 +15,12 @@ async fn main() -> anyhow::Result<()> {
     let canvas_dir = std::env::var("AMASSADA_CANVAS_DIR")
         .unwrap_or("canvases/stdlib".into());
 
+    let (event_tx, _) = broadcast::channel::<SessionEvent>(256);
+
     let state = ServerState {
         canvas_dir,
         active_state: Arc::new(Mutex::new(SessionState::Initializing)),
+        event_tx,
     };
 
     let app = Router::new()
