@@ -17,11 +17,11 @@ Development language: **Rust**. Cargo workspace with two crates: `amassada-core`
 
 ## HTTP + WebSocket surface (`amassada-server/src/`)
 - `main.rs` — creates the broadcast channel at startup, wires routes
-- `api.rs` — `POST /sessions/start`, `GET /state`, `POST /events` (external producers publish `SessionEvent` JSON into the bus)
+- `api.rs` — `POST /sessions`, `GET /state`, `POST /human_input`, `POST /events` (external producers publish `SessionEvent` JSON into the bus)
 - `ws.rs` — `GET /ws` upgrades to WebSocket; each connection subscribes to the broadcast channel and receives all `SessionEvent`s as JSON; closes on terminal events (`SessionCompleted`, `SessionFailed`) or client disconnect; lagged subscribers get a warning, not a panic
 
 ## Agent dispatch
-`dispatch(TurnRequest)` is a streaming Claude API call. The model is configured per-agent in Fondament (defaults to `claude-sonnet-4-6`). The system prompt injects the agent's persona and available blocks. The user turn is the assembled context from `build_context()`. The response is streamed and fed to the block parser in `blocks.rs` as it arrives.
+`dispatch(TurnRequest)` is a single non-streaming Claude API call (`reqwest` POST to `/v1/messages`, full JSON response awaited). The model is configured per-agent in Fondament (defaults to `claude-sonnet-4-6`). The system prompt injects the agent's persona and available blocks. The user turn is the assembled context from `build_context()`. The full response text is parsed by the block parser in `blocks.rs` once the call returns. Prompt caching is always enabled (`anthropic-beta: prompt-caching-2024-07-31`); extended thinking (`interleaved-thinking-2025-05-14`) is enabled only when `thinking_budget` is set.
 
 Moderator turns receive an additional context envelope (transcript, budget state, artifact status, active personas, canvas hints — all labeled as advisory).
 

@@ -344,6 +344,15 @@ Defines a new project from a business idea or brief. Produces artifacts consumed
 - Rounds: 3 – 8, context window 20
 - Output artifacts: Project Brief, Milestone Plan, Spike List, Initial Task Breakdown
 
+### `governance-deliberation.yaml` — mode: auto
+
+Governance deliberation on a proposed Fondament archetype or cross-project standard change; risk-scored session composition. Human slot present for binding authority but the session can run without interaction.
+
+- Participants: `moderator` (stances/moderator), `adversarial` (stances/adversarial), `realist` (stances/realist), `builder` (stances/builder), `human` (binding)
+- Budget: 15,000 tokens (11,000 / 3,000 / 1,000)
+- Rounds: 3 – 6, context window 20, up to 2 consultation turns
+- Output sections: Proposed Archetype Change, Risk Assessment, Agent Votes, Impact Analysis (optional), Recommendation
+
 ---
 
 ## Channel types
@@ -624,9 +633,13 @@ Request body (JSON):
 
 Valid `kind` values: `btw`, `call`, `approve`, `reject`, `modify`. Returns 202 Accepted.
 
+### `POST /events`
+
+Accepts an externally-produced `SessionEvent` (JSON body) and publishes it onto the server's broadcast channel, fanning it out to every connected `/ws` subscriber. This is how external processes (Caissa, cursor capture, etc.) inject events into the bus without going through the session engine. Returns 202 Accepted whether or not there are active subscribers.
+
 ### `GET /ws`
 
-WebSocket upgrade endpoint. The planned implementation subscribes to the `MainSessionChannel` broadcast receiver and forwards each `SessionEvent` as a JSON frame. The v0.1.0 stub accepts the upgrade and logs the connection.
+WebSocket upgrade endpoint. On connect, the handler subscribes to the server's `broadcast::Sender<SessionEvent>` (capacity 256) and forwards each event as a JSON text frame. The connection closes when a terminal event (`SessionCompleted` or `SessionFailed`) is received, the client disconnects, or the broadcast channel itself closes. A lagged subscriber (slow consumer falling behind the channel buffer) logs a warning and continues — it does not panic or drop the connection.
 
 ---
 
