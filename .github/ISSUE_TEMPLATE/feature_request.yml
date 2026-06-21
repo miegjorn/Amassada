@@ -1,6 +1,6 @@
 name: Feature request
 description: New capability or enhancement
-labels: ["type:feature", "component:amassada"]
+labels: ["component:amassada"]
 body:
   - type: textarea
     id: why
