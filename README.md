@@ -93,7 +93,7 @@ The `charradissa` feature flag (`--features charradissa`) enables the `Charradis
 
 ### `amassada-server` (binary)
 
-A thin Axum service that wraps `amassada-core` for remote use. Provides REST endpoints for session control and a WebSocket endpoint for real-time event streaming. Default port: **7600**.
+A thin Axum service that wraps `amassada-core` for remote use. Provides REST endpoints for session control and a WebSocket endpoint for real-time event streaming. Default port: **7700**.
 
 ---
 
@@ -579,7 +579,7 @@ Implemented in the Charradissa repository. Enabled by building `amassada-core` w
 
 ## REST API and WebSocket interface
 
-`amassada-server` exposes an Axum router on `0.0.0.0:{AMASSADA_PORT}` (default 7600).
+`amassada-server` exposes an Axum router on `0.0.0.0:{AMASSADA_PORT}` (default 7700).
 
 ### `POST /sessions`
 
@@ -636,7 +636,7 @@ All configuration is via environment variables. No configuration file.
 
 | Variable | Default | Description |
 |---|---|---|
-| `AMASSADA_PORT` | `7600` | Port for `amassada-server` to listen on |
+| `AMASSADA_PORT` | `7700` | Port for `amassada-server` to listen on |
 | `AMASSADA_CANVAS_DIR` | `canvases/stdlib` | Directory scanned for canvas YAML files at startup |
 | `ANTHROPIC_API_KEY` | — | Required. Passed as the `x-api-key` header on every Anthropic API call. The server fails to dispatch any turn if this is unset. |
 
