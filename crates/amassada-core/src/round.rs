@@ -1,4 +1,4 @@
-use crate::blocks::{AgentBlock, parse_blocks};
+use crate::blocks::{AgentBlock, parse_blocks, ProposalOp};
 use crate::budget::{BudgetLedger, PoolName};
 use crate::channels::whisper::WhisperQueue;
 use crate::context::ContextBuilder;
@@ -25,11 +25,21 @@ pub struct RoundResult {
     pub should_close: bool,
     pub approval_requested: Option<String>,
     pub canvas_switch: Option<String>,
+    /// Graph proposals collected from all agents in this round.
+    pub proposal_ops: Vec<ProposalOp>,
+    /// Concatenated main-block content from all turns, for extraction.
+    pub round_transcript: String,
 }
 
 impl<'a> RoundRunner<'a> {
-    pub async fn run(&mut self) -> Result<RoundResult> {
-        let mut result = RoundResult { should_close: false, approval_requested: None, canvas_switch: None };
+    pub async fn run(&mut self, shared_context: Option<String>) -> Result<RoundResult> {
+        let mut result = RoundResult {
+            should_close: false,
+            approval_requested: None,
+            canvas_switch: None,
+            proposal_ops: vec![],
+            round_transcript: String::new(),
+        };
 
         self.transport.broadcast(&SessionEvent::RoundStarted { round: self.round_num }).await?;
 
@@ -60,7 +70,15 @@ impl<'a> RoundRunner<'a> {
             );
 
             let model = participant.model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_string());
-            let req = TurnRequest { system_prompt, context, model, max_tokens: MAX_TOKENS_PER_TURN, thinking_budget: participant.thinking_budget, api_key: None, shared_context: None };
+            let req = TurnRequest {
+                system_prompt,
+                context,
+                model,
+                max_tokens: MAX_TOKENS_PER_TURN,
+                thinking_budget: participant.thinking_budget,
+                api_key: None,
+                shared_context: shared_context.clone(),
+            };
 
             let response = dispatch::dispatch(req).await?;
             let tokens_used = response.input_tokens + response.output_tokens;
@@ -71,6 +89,22 @@ impl<'a> RoundRunner<'a> {
             let main_content = parsed.agent_blocks.iter()
                 .find_map(|b| if let AgentBlock::Main { content } = b { Some(content.clone()) } else { None })
                 .unwrap_or_else(|| response.text.clone());
+
+            // Collect graph proposals from this turn
+            for block in &parsed.agent_blocks {
+                if let AgentBlock::GraphProposal { ops } = block {
+                    result.proposal_ops.extend(ops.clone());
+                }
+            }
+
+            // Append to round transcript for extraction
+            if !result.round_transcript.is_empty() {
+                result.round_transcript.push('\n');
+            }
+            result.round_transcript.push_str(&format!(
+                "[{}] {}: {}",
+                participant.persona, agent_id, main_content
+            ));
 
             let record = TurnRecord {
                 agent_id: agent_id.clone(),

@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
+use crate::blocks::ProposalOp;
 use crate::budget::BudgetLedger;
 use crate::canvas::Canvas;
 use crate::channels::whisper::WhisperQueue;
 use crate::context::ContextBuilder;
 use crate::error::Result;
+use crate::graph::{extract_delta, GraphDelta, NodeId, NodeType, NodeUpdate, SessionGraph};
 use crate::round::RoundRunner;
 use crate::synthesis::synthesize_artifacts;
 use crate::transport::Transport;
@@ -15,16 +17,20 @@ pub struct SessionEngine {
     pub session_id: String,
     pub canvas: Canvas,
     pub goal: String,
+    pub graph: SessionGraph,
     transport: Arc<dyn Transport>,
     canvas_library: HashMap<String, Canvas>,
 }
 
 impl SessionEngine {
     pub fn new(canvas: Canvas, goal: String, transport: Arc<dyn Transport>) -> Self {
+        let session_id = Uuid::new_v4().to_string();
+        let graph = SessionGraph::new(&session_id);
         Self {
-            session_id: Uuid::new_v4().to_string(),
+            session_id,
             canvas,
             goal,
+            graph,
             transport,
             canvas_library: HashMap::new(),
         }
@@ -35,7 +41,7 @@ impl SessionEngine {
         self
     }
 
-    pub async fn run(&self) -> Result<SessionOutput> {
+    pub async fn run(&mut self) -> Result<SessionOutput> {
         // Use a local mutable canvas so hot-switch mid-session is possible
         let mut active_canvas = self.canvas.clone();
 
@@ -72,6 +78,18 @@ impl SessionEngine {
         let mut current_round = 1u32;
 
         while !state.is_terminal() && current_round <= active_canvas.rounds.max {
+            // Round 1 gets no shared_context; subsequent rounds get a graph snapshot
+            // rooted at frontier nodes.
+            let shared_context = if current_round == 1 {
+                None
+            } else {
+                let frontier_ids: Vec<NodeId> = self.graph.layers.causal.nodes.values()
+                    .filter(|n| n.node_type == NodeType::Frontier)
+                    .map(|n| n.id.clone())
+                    .collect();
+                Some(self.graph.retrieve(&frontier_ids, 1))
+            };
+
             let mut runner = RoundRunner {
                 round_num: current_round,
                 participants: &mut participants,
@@ -81,7 +99,34 @@ impl SessionEngine {
                 transport: &*self.transport,
             };
 
-            let result = runner.run().await?;
+            let result = runner.run(shared_context).await?;
+
+            // ── Round-boundary graph update ───────────────────────────────────
+
+            // 1. Apply agent proposals (pure conversion, no API call).
+            let proposals_delta = proposals_to_delta(result.proposal_ops);
+            self.graph.apply_delta(proposals_delta);
+
+            // 2. Extract additional delta from transcript via Haiku (non-fatal).
+            if !result.round_transcript.is_empty() {
+                let existing_node_ids: Vec<NodeId> = self.graph.layers.causal.nodes.keys()
+                    .chain(self.graph.layers.epistemic.nodes.keys())
+                    .chain(self.graph.layers.semantic.nodes.keys())
+                    .chain(self.graph.layers.economic.nodes.keys())
+                    .cloned()
+                    .collect();
+
+                match extract_delta(&result.round_transcript, &existing_node_ids, None).await {
+                    Ok(extraction_delta) => {
+                        self.graph.apply_delta(extraction_delta);
+                    }
+                    Err(e) => {
+                        tracing::warn!("graph extraction failed (non-fatal): {}", e);
+                    }
+                }
+            }
+
+            // ─────────────────────────────────────────────────────────────────
 
             // Apply canvas hot-switch if requested
             if let Some(new_canvas_id) = result.canvas_switch {
@@ -167,4 +212,28 @@ impl SessionEngine {
         let _ = state; // state variable used for AwaitingApproval tracking
         Ok(output)
     }
+}
+
+// ── Graph helpers ─────────────────────────────────────────────────────────────
+
+/// Convert agent-proposed ops into a `GraphDelta` without any API call.
+/// Pure conversion: NewNode → new_nodes, NewEdge → new_edges, etc.
+fn proposals_to_delta(ops: Vec<ProposalOp>) -> GraphDelta {
+    let mut new_nodes = Vec::new();
+    let mut new_edges = Vec::new();
+    let mut new_vias  = Vec::new();
+    let mut updates   = Vec::new();
+
+    for op in ops {
+        match op {
+            ProposalOp::NewNode { node }                                => new_nodes.push(node),
+            ProposalOp::NewEdge { edge }                                => new_edges.push(edge),
+            ProposalOp::NewVia  { via }                                 => new_vias.push(via),
+            ProposalOp::UpdateNode { id, activation_weight, epistemic_state } => {
+                updates.push(NodeUpdate { id, activation_weight, epistemic_state });
+            }
+        }
+    }
+
+    GraphDelta { new_nodes, new_edges, new_vias, updates }
 }
