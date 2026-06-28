@@ -183,6 +183,7 @@ pub async fn select_canvas_with_llm(query: &str, library: &CanvasLibrary) -> Str
         max_tokens: 32,
         thinking_budget: None,
         api_key: None,
+        shared_context: None,
     }).await {
         Ok(resp) => {
             let id = resp.text.trim().to_string();
