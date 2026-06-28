@@ -469,6 +469,10 @@ impl SessionGraph {
         }
 
         // ── VIAS section (active, at least one endpoint retrieved) ───────────
+        // Output threshold (0.3) is intentionally lower than the traversal threshold (0.5):
+        // weak vias are visible here for human review even though they are not followed
+        // during graph traversal in `retrieve`.  A via line may therefore name a node
+        // that was not pulled into the retrieved set.
         let mut active_vias: Vec<&Via> = self
             .vias
             .iter()

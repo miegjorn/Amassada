@@ -246,6 +246,51 @@ fn retrieve_omits_weak_vias() {
 }
 
 #[test]
+fn retrieve_follows_second_hop_vias() {
+    let mut graph = SessionGraph::new("ret-second-hop");
+    let (n1, node1) = make_node("N1", "scope-node", NodeType::Axiom, 0.9);
+    let (s1, node_s1) = make_node("S1", "first-hop-via-target", NodeType::Supporting, 0.5);
+    let (s2, node_s2) = make_node("S2", "second-hop-via-target", NodeType::Supporting, 0.5);
+    graph.layers.causal.nodes.insert(n1.clone(), node1);
+    graph.layers.semantic.nodes.insert(s1, node_s1);
+    graph.layers.semantic.nodes.insert(s2, node_s2);
+    graph.vias.push(make_via("N1", "S1", 0.8)); // hop 1: scope → S1
+    graph.vias.push(make_via("S1", "S2", 0.8)); // hop 2: S1 → S2
+
+    let two_hop = graph.retrieve(&[n1.clone()], 2);
+    assert!(
+        two_hop.contains("second-hop-via-target"),
+        "S2 must appear when via_hops == 2\n{}",
+        two_hop
+    );
+
+    let one_hop = graph.retrieve(&[n1], 1);
+    assert!(
+        !one_hop.contains("second-hop-via-target"),
+        "S2 must NOT appear when via_hops == 1\n{}",
+        one_hop
+    );
+}
+
+#[test]
+fn retrieve_only_follows_outgoing_edges() {
+    let mut graph = SessionGraph::new("ret-direction");
+    let (n1, node1) = make_node("N1", "scope-node", NodeType::Axiom, 0.9);
+    let (n2, node2) = make_node("N2", "predecessor-node", NodeType::Resolved, 0.9);
+    graph.layers.causal.nodes.insert(n1.clone(), node1);
+    graph.layers.causal.nodes.insert(n2, node2);
+    // Edge points FROM N2 TO N1 — N1 is the target, not the source
+    graph.layers.causal.edges.push(make_edge("N2", "N1", EdgeType::LeadsTo));
+
+    let output = graph.retrieve(&[n1], 1);
+    assert!(
+        !output.contains("predecessor-node"),
+        "incoming edge predecessor must NOT appear in retrieve output\n{}",
+        output
+    );
+}
+
+#[test]
 fn retrieve_output_is_subset_of_full() {
     let mut graph = SessionGraph::new("ret-subset");
     let (n1, node1) = make_node("N1", "scope-node-only", NodeType::Axiom, 0.9);
