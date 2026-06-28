@@ -10,6 +10,10 @@ pub struct TurnRequest {
     /// API key to use. When None, falls back to ANTHROPIC_API_KEY env var.
     /// Set by callers that resolve credentials via Gardian.
     pub api_key: Option<String>,
+    /// Optional graph subset (from SessionGraph::retrieve) injected as system[0].
+    /// When Some, system becomes two cached blocks: graph ctx first, then persona.
+    /// When None, single-block behavior is preserved.
+    pub shared_context: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +33,42 @@ pub fn effective_max_tokens(max_tokens: u32, thinking_budget: Option<u32>) -> u3
     }
 }
 
+/// Build the JSON request body for the Anthropic Messages API.
+///
+/// Extracted so tests can verify body construction without making live API calls.
+/// When `req.shared_context` is `Some(ctx)`, system becomes two cached blocks:
+///   [0] graph context, [1] agent persona — both with `cache_control: ephemeral`.
+/// When `None`, the single-block legacy behavior is preserved.
+pub fn build_request_body(req: &TurnRequest) -> serde_json::Value {
+    let max_tokens = effective_max_tokens(req.max_tokens, req.thinking_budget);
+
+    // system as array-of-blocks so the API can cache the stable system prompt across
+    // turns. The cache breakpoint fires when the prompt exceeds 1024 tokens (large
+    // Fondament domain contexts); for smaller prompts the API ignores the hint silently.
+    let system = match &req.shared_context {
+        Some(ctx) => serde_json::json!([
+            {"type": "text", "text": ctx,               "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": req.system_prompt, "cache_control": {"type": "ephemeral"}}
+        ]),
+        None => serde_json::json!([
+            {"type": "text", "text": req.system_prompt, "cache_control": {"type": "ephemeral"}}
+        ]),
+    };
+
+    let mut body = serde_json::json!({
+        "model": req.model,
+        "max_tokens": max_tokens,
+        "system": system,
+        "messages": [{"role": "user", "content": req.context}]
+    });
+
+    if let Some(budget) = req.thinking_budget.filter(|&b| b > 0) {
+        body["thinking"] = serde_json::json!({"type": "enabled", "budget_tokens": budget});
+    }
+
+    body
+}
+
 /// Calls the Anthropic Messages API directly via reqwest.
 /// Uses the user-message-only format (no prefill, no multi-turn list).
 pub async fn dispatch(req: TurnRequest) -> Result<TurnResponse> {
@@ -36,21 +76,7 @@ pub async fn dispatch(req: TurnRequest) -> Result<TurnResponse> {
         .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
         .ok_or_else(|| AmassadaError::Dispatch("ANTHROPIC_API_KEY not set".into()))?;
 
-    let max_tokens = effective_max_tokens(req.max_tokens, req.thinking_budget);
-
-    // system as array-of-blocks so the API can cache the stable system prompt across
-    // turns. The cache breakpoint fires when the prompt exceeds 1024 tokens (large
-    // Fondament domain contexts); for smaller prompts the API ignores the hint silently.
-    let mut body = serde_json::json!({
-        "model": req.model,
-        "max_tokens": max_tokens,
-        "system": [{"type": "text", "text": req.system_prompt, "cache_control": {"type": "ephemeral"}}],
-        "messages": [{"role": "user", "content": req.context}]
-    });
-
-    if let Some(budget) = req.thinking_budget.filter(|&b| b > 0) {
-        body["thinking"] = serde_json::json!({"type": "enabled", "budget_tokens": budget});
-    }
+    let body = build_request_body(&req);
 
     let client = reqwest::Client::new();
     let mut request_builder = client

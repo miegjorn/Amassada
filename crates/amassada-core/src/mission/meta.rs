@@ -106,6 +106,7 @@ impl MetaModerator for ClaudeMetaModerator {
             max_tokens: 2048,
             thinking_budget: None,
             api_key: None,
+            shared_context: None,
         }).await?;
         let plans = parse_session_plans(&resp.text)?;
         Ok((plans, (resp.input_tokens + resp.output_tokens) as u64))
@@ -119,6 +120,7 @@ impl MetaModerator for ClaudeMetaModerator {
             max_tokens: 2048,
             thinking_budget: None,
             api_key: None,
+            shared_context: None,
         }).await?;
         let plans = parse_session_plans(&resp.text)?;
         Ok((plans, (resp.input_tokens + resp.output_tokens) as u64))
@@ -133,6 +135,7 @@ impl MetaModerator for ClaudeMetaModerator {
             max_tokens: 4096,
             thinking_budget: None,
             api_key: None,
+            shared_context: None,
         }).await?;
         let verdict = parse_farga_verdict(&resp.text)?;
         Ok((verdict, (resp.input_tokens + resp.output_tokens) as u64))
