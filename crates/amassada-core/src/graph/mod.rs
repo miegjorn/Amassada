@@ -1,3 +1,6 @@
+pub mod extractor;
+pub use extractor::{extract_delta, GraphDelta, NodeUpdate};
+
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
@@ -356,6 +359,62 @@ impl SessionGraph {
         }
 
         self.serialize_subset(&retrieved)
+    }
+
+    /// Apply a `GraphDelta` returned by the extractor to this graph.
+    ///
+    /// Routing rule (derives from `node_type` so no separate layer metadata needed):
+    /// - `NodeType::Supporting` → `layers.semantic`
+    /// - All other node types   → `layers.causal`
+    ///
+    /// New edges go to `layers.causal.edges`. New vias go to `self.vias`.
+    /// Updates are applied to whichever layer contains the target node.
+    /// Bumps `self.version` by 1 regardless of delta content.
+    pub fn apply_delta(&mut self, delta: extractor::GraphDelta) {
+        // ── insert nodes ─────────────────────────────────────────────────────
+        for node in delta.new_nodes {
+            match node.node_type {
+                NodeType::Supporting => {
+                    self.layers.semantic.nodes.insert(node.id.clone(), node);
+                }
+                _ => {
+                    self.layers.causal.nodes.insert(node.id.clone(), node);
+                }
+            }
+        }
+
+        // ── insert edges (causal layer) ──────────────────────────────────────
+        for edge in delta.new_edges {
+            self.layers.causal.edges.push(edge);
+        }
+
+        // ── insert vias ──────────────────────────────────────────────────────
+        for via in delta.new_vias {
+            self.vias.push(via);
+        }
+
+        // ── apply updates (search all layers) ────────────────────────────────
+        for update in delta.updates {
+            let node = self
+                .layers
+                .causal
+                .nodes
+                .get_mut(&update.id)
+                .or_else(|| self.layers.semantic.nodes.get_mut(&update.id))
+                .or_else(|| self.layers.epistemic.nodes.get_mut(&update.id))
+                .or_else(|| self.layers.economic.nodes.get_mut(&update.id));
+
+            if let Some(node) = node {
+                if let Some(aw) = update.activation_weight {
+                    node.activation_weight = aw;
+                }
+                if let Some(es) = update.epistemic_state {
+                    node.epistemic_state = es;
+                }
+            }
+        }
+
+        self.version += 1;
     }
 
     /// Serialize only the nodes present in `ids`.

@@ -1,4 +1,5 @@
 use amassada_core::graph::*;
+use amassada_core::graph::extractor::{GraphDelta, NodeUpdate};
 
 // ── retrieve helpers ──────────────────────────────────────────────────────────
 
@@ -288,6 +289,123 @@ fn retrieve_only_follows_outgoing_edges() {
         "incoming edge predecessor must NOT appear in retrieve output\n{}",
         output
     );
+}
+
+// ── apply_delta ───────────────────────────────────────────────────────────────
+
+#[test]
+fn apply_delta_increments_version() {
+    let mut graph = SessionGraph::new("delta-version");
+    assert_eq!(graph.version, 0);
+
+    let delta = GraphDelta {
+        new_nodes: vec![],
+        new_edges: vec![],
+        new_vias:  vec![],
+        updates:   vec![],
+    };
+    graph.apply_delta(delta);
+    assert_eq!(graph.version, 1, "apply_delta must bump version by 1");
+
+    // Applying a second delta bumps again
+    let delta2 = GraphDelta {
+        new_nodes: vec![],
+        new_edges: vec![],
+        new_vias:  vec![],
+        updates:   vec![],
+    };
+    graph.apply_delta(delta2);
+    assert_eq!(graph.version, 2);
+}
+
+#[test]
+fn apply_delta_inserts_nodes() {
+    let mut graph = SessionGraph::new("delta-nodes");
+
+    let causal_node = Node {
+        id:                NodeId("C1".to_string()),
+        summary:           "causal node lands in causal layer".to_string(),
+        node_type:         NodeType::Resolved,
+        activation_weight: 0.7,
+        epistemic_state:   0.1,
+        farga_ref:         None,
+    };
+    let semantic_node = Node {
+        id:                NodeId("S1".to_string()),
+        summary:           "supporting node lands in semantic layer".to_string(),
+        node_type:         NodeType::Supporting,
+        activation_weight: 0.6,
+        epistemic_state:   0.2,
+        farga_ref:         None,
+    };
+
+    // Also exercise updates: pre-insert a node and patch its activation_weight.
+    let target_node = Node {
+        id:                NodeId("T1".to_string()),
+        summary:           "node to be updated by delta".to_string(),
+        node_type:         NodeType::Frontier,
+        activation_weight: 0.3,
+        epistemic_state:   0.5,
+        farga_ref:         None,
+    };
+    graph.layers.causal.nodes.insert(NodeId("T1".to_string()), target_node);
+
+    let delta = GraphDelta {
+        new_nodes: vec![causal_node, semantic_node],
+        new_edges: vec![Edge {
+            from:      NodeId("C1".to_string()),
+            to:        NodeId("T1".to_string()),
+            edge_type: EdgeType::LeadsTo,
+            weight:    1.0,
+        }],
+        new_vias:  vec![Via {
+            from_layer: LayerKind::Semantic,
+            from_node:  NodeId("S1".to_string()),
+            to_layer:   LayerKind::Causal,
+            to_node:    NodeId("C1".to_string()),
+            via_type:   ViaType::AnalogyOf,
+            strength:   0.9,
+        }],
+        updates:   vec![NodeUpdate {
+            id:                NodeId("T1".to_string()),
+            activation_weight: Some(0.95),
+            epistemic_state:   None,
+        }],
+    };
+
+    graph.apply_delta(delta);
+
+    // Node routing
+    assert!(
+        graph.layers.causal.nodes.contains_key(&NodeId("C1".to_string())),
+        "Resolved node must land in causal layer"
+    );
+    assert!(
+        graph.layers.semantic.nodes.contains_key(&NodeId("S1".to_string())),
+        "Supporting node must land in semantic layer"
+    );
+
+    // Edge inserted into causal layer
+    assert_eq!(graph.layers.causal.edges.len(), 1);
+    assert_eq!(graph.layers.causal.edges[0].from, NodeId("C1".to_string()));
+
+    // Via inserted
+    assert_eq!(graph.vias.len(), 1);
+    assert_eq!(graph.vias[0].from_node, NodeId("S1".to_string()));
+
+    // Update applied: activation_weight patched, epistemic_state unchanged
+    let t1 = graph.layers.causal.nodes.get(&NodeId("T1".to_string())).unwrap();
+    assert!(
+        (t1.activation_weight - 0.95).abs() < 1e-6,
+        "activation_weight must be updated to 0.95"
+    );
+    assert!(
+        (t1.epistemic_state - 0.5).abs() < 1e-6,
+        "epistemic_state must remain 0.5 (None in update)"
+    );
+
+    // Version bumped
+    assert_eq!(graph.version, 1);
 }
 
 #[test]
