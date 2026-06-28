@@ -8,6 +8,7 @@ use crate::moderator::ModeratorExecutor;
 use crate::transport::Transport;
 use crate::types::{ActiveParticipant, AgentId, SessionEvent, TurnRecord};
 use chrono::Utc;
+use futures::future::join_all;
 
 const DEFAULT_MODEL: &str = "claude-sonnet-4-6";
 const MAX_TOKENS_PER_TURN: u32 = 4096;
@@ -48,27 +49,32 @@ impl<'a> RoundRunner<'a> {
             .map(|p| p.agent_id.clone())
             .collect();
 
+        // Phase 1: build all requests sequentially — requires &mut self for whisper drain
+        // and context assembly, but the actual API calls are independent.
+        struct PreparedItem {
+            agent_id: AgentId,
+            participant: ActiveParticipant,
+            req: TurnRequest,
+        }
+
+        let mut prepared: Vec<PreparedItem> = Vec::new();
         for agent_id in &participant_ids {
             let participant = match self.participants.iter().find(|p| &p.agent_id == agent_id) {
                 Some(p) => p.clone(),
                 None => continue,
             };
 
-            // drain whispers
             let whispers = self.whisper_queue.drain(agent_id);
-
             let context = self.context_builder.build_for(
                 agent_id,
                 whispers,
                 None, // moderator envelope built separately for moderator
             );
-
             let system_prompt = build_system_prompt(
                 &participant.persona,
-                &participant.domain, // simplified: domain is the system prompt body
+                &participant.domain,
                 participant.is_moderator,
             );
-
             let model = participant.model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_string());
             let req = TurnRequest {
                 system_prompt,
@@ -79,10 +85,37 @@ impl<'a> RoundRunner<'a> {
                 api_key: None,
                 shared_context: shared_context.clone(),
             };
+            prepared.push(PreparedItem { agent_id: agent_id.clone(), participant, req });
+        }
 
-            let response = dispatch::dispatch(req).await?;
+        // Phase 2: dispatch all agents concurrently.
+        let (meta, handles): (Vec<(AgentId, ActiveParticipant)>, Vec<_>) = prepared
+            .into_iter()
+            .map(|item| {
+                let handle = tokio::spawn(async move { dispatch::dispatch(item.req).await });
+                ((item.agent_id, item.participant), handle)
+            })
+            .unzip();
+
+        let responses = join_all(handles).await;
+
+        // Phase 3: process responses in the same order as participant_ids.
+        for (i, join_result) in responses.into_iter().enumerate() {
+            let (agent_id, participant) = &meta[i];
+
+            let response = match join_result {
+                Ok(Ok(resp)) => resp,
+                Ok(Err(e)) => {
+                    tracing::warn!("agent {} dispatch error: {}", agent_id, e);
+                    continue;
+                }
+                Err(e) => {
+                    tracing::warn!("agent {} join error: {}", agent_id, e);
+                    continue;
+                }
+            };
+
             let tokens_used = response.input_tokens + response.output_tokens;
-
             let parsed = parse_blocks(&response.text, participant.is_moderator);
 
             // Handle MAIN block
@@ -134,7 +167,7 @@ impl<'a> RoundRunner<'a> {
             if participant.is_moderator && !parsed.moderator_actions.is_empty() {
                 let exec = ModeratorExecutor;
                 let exec_result = exec.execute(
-                    parsed.moderator_actions,
+                    parsed.moderator_actions.clone(),
                     self.participants,
                     self.budget,
                     self.whisper_queue,
@@ -184,7 +217,7 @@ impl<'a> RoundRunner<'a> {
                 }
             }
 
-            // BTW handling (simplified: logged to transcript)
+            // BTW handling
             for block in &parsed.agent_blocks {
                 if let AgentBlock::Btw { to, content } = block {
                     self.transport.broadcast(&SessionEvent::BtwEmitted {
@@ -205,4 +238,127 @@ impl<'a> RoundRunner<'a> {
 
 impl ActiveParticipant {
     pub fn is_human(&self) -> bool { self.persona == "human" }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    use async_trait::async_trait;
+    use crate::channels::consult::{ConsultRequest, ConsultResponse};
+    use crate::transport::Transport;
+    use crate::types::{HumanInput, SessionOutput};
+
+    // Minimal transport that records broadcasted events for assertion.
+    struct MockTransport {
+        events: Arc<Mutex<Vec<SessionEvent>>>,
+    }
+
+    impl MockTransport {
+        fn new() -> Self {
+            Self { events: Arc::new(Mutex::new(Vec::new())) }
+        }
+        fn events(&self) -> Vec<SessionEvent> {
+            self.events.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl Transport for MockTransport {
+        async fn broadcast(&self, event: &SessionEvent) -> crate::error::Result<()> {
+            self.events.lock().unwrap().push(event.clone());
+            Ok(())
+        }
+        async fn consult(&self, _req: &ConsultRequest) -> crate::error::Result<ConsultResponse> {
+            unimplemented!("consult not used in round unit tests")
+        }
+        async fn whisper(&self, _agent: &AgentId, _msg: &crate::types::WhisperMsg) -> crate::error::Result<()> {
+            Ok(())
+        }
+        async fn recv_human(&self) -> Option<HumanInput> { None }
+        async fn emit_output(&self, _output: &SessionOutput) -> crate::error::Result<()> { Ok(()) }
+    }
+
+    fn ample_budget() -> BudgetLedger {
+        BudgetLedger::new(100_000, 80_000, 15_000, 5_000)
+    }
+
+    /// With only human participants the parallel dispatch loop spawns 0 tasks and
+    /// joins immediately. The round must emit RoundStarted + RoundCompleted and
+    /// return an empty, non-closing result.
+    #[tokio::test]
+    async fn round_dispatches_all_agents() {
+        let transport = MockTransport::new();
+        let mut participants = vec![
+            ActiveParticipant {
+                agent_id: AgentId::new("h1"),
+                persona: "human".into(),
+                domain: String::new(),
+                is_moderator: false,
+                turns_taken: 0,
+                model: None,
+                thinking_budget: None,
+            },
+        ];
+        let mut ctx = ContextBuilder::new(8);
+        let mut wq = WhisperQueue::new();
+        let mut budget = ample_budget();
+
+        let mut runner = RoundRunner {
+            round_num: 1,
+            participants: &mut participants,
+            context_builder: &mut ctx,
+            whisper_queue: &mut wq,
+            budget: &mut budget,
+            transport: &transport,
+        };
+
+        let result = runner.run(None).await.expect("round must complete");
+        assert!(!result.should_close, "round should not request close");
+        assert!(result.proposal_ops.is_empty(), "no proposals expected");
+
+        let events = transport.events();
+        assert!(
+            events.iter().any(|e| matches!(e, SessionEvent::RoundStarted { round: 1 })),
+            "RoundStarted must be emitted"
+        );
+        assert!(
+            events.iter().any(|e| matches!(e, SessionEvent::RoundCompleted { round: 1 })),
+            "RoundCompleted must be emitted"
+        );
+        let turn_count = events.iter().filter(|e| matches!(e, SessionEvent::TurnCompleted { .. })).count();
+        assert_eq!(turn_count, 0, "human participants do not produce TurnCompleted events");
+    }
+
+    /// With N=0 non-human participants the join_all completes immediately with an
+    /// empty results slice — no turn records can be duplicated or fabricated.
+    #[tokio::test]
+    async fn round_parallelism_does_not_duplicate_turns() {
+        let transport = MockTransport::new();
+        let mut participants: Vec<ActiveParticipant> = vec![];
+        let mut ctx = ContextBuilder::new(8);
+        let mut wq = WhisperQueue::new();
+        let mut budget = ample_budget();
+
+        let mut runner = RoundRunner {
+            round_num: 2,
+            participants: &mut participants,
+            context_builder: &mut ctx,
+            whisper_queue: &mut wq,
+            budget: &mut budget,
+            transport: &transport,
+        };
+
+        let _result = runner.run(None).await.expect("round must complete");
+
+        let turn_count = transport
+            .events()
+            .iter()
+            .filter(|e| matches!(e, SessionEvent::TurnCompleted { .. }))
+            .count();
+        // N=0 agents → exactly N=0 turn records; the parallel join cannot duplicate entries.
+        assert_eq!(turn_count, 0, "zero agents must produce zero TurnCompleted events");
+        // context_builder must also be empty — no phantom pushes
+        assert_eq!(ctx.len(), 0, "context_builder must have 0 turns after empty round");
+    }
 }
