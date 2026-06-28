@@ -3,9 +3,10 @@ mod ws;
 
 use axum::{routing::{get, post}, Router};
 use api::ServerState;
-use amassada_core::types::{SessionState, SessionEvent};
+use amassada_core::types::SessionEvent;
+use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{broadcast, RwLock};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -14,18 +15,23 @@ async fn main() -> anyhow::Result<()> {
     let port = std::env::var("AMASSADA_PORT").unwrap_or("7700".into());
     let canvas_dir = std::env::var("AMASSADA_CANVAS_DIR")
         .unwrap_or("canvases/stdlib".into());
+    let farga_url = std::env::var("FARGA_URL").ok();
+    let fondament_path = std::env::var("FONDAMENT_PATH").unwrap_or("/fondament".into());
 
     let (event_tx, _) = broadcast::channel::<SessionEvent>(256);
 
     let state = ServerState {
         canvas_dir,
-        active_state: Arc::new(Mutex::new(SessionState::Initializing)),
+        sessions: Arc::new(RwLock::new(HashMap::new())),
         event_tx,
+        farga_url,
+        fondament_path,
     };
 
     let app = Router::new()
         .route("/health", axum::routing::get(|| async { "ok" }))
         .route("/sessions", post(api::start_session))
+        .route("/sessions/:session_id/message", post(api::post_message))
         .route("/state", get(api::get_state))
         .route("/human_input", post(api::post_human_input))
         .route("/events", post(api::publish_event))

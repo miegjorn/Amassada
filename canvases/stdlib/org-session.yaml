@@ -1,0 +1,35 @@
+id: org-session
+version: "1.0.0"
+mode: interactive
+selector:
+  description: "Ongoing org-level conversation with the Guilhem chronicler agent"
+  tags: [org, guilhem, continuous, chronicle]
+  examples:
+    - "what's the state of the stack?"
+    - "record this decision"
+    - "what should we work on next?"
+initial_participants:
+  - persona: guilhem
+    domain: fondament/guilhem
+    modifiers: [deconstructive]
+    endpoint: "http://guilhem.agents.svc.cluster.local:8080"
+budget:
+  total_tokens: 200000
+  pools:
+    main_session: 180000
+    consultations: 15000
+    mod_whisper: 5000
+consultation:
+  max_turns: 3
+  min_response_tokens: 30
+rounds:
+  min: 1
+  max: 999
+  convergence_modifier: 1.0
+  context_window: 20
+human:
+  slot: true
+  advisory_window_turns: 1
+output:
+  format: markdown
+  sections: []

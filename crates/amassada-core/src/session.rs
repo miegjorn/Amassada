@@ -110,6 +110,7 @@ impl SessionEngine {
                 model: def.model.clone(),
                 thinking_budget: def.thinking_budget,
                 is_deconstructive: def.is_deconstructive(),
+                endpoint: def.endpoint.clone(),
                 collected_parts: vec![],
             })
             .collect();
@@ -205,6 +206,7 @@ impl SessionEngine {
                             model: def.model.clone(),
                             thinking_budget: def.thinking_budget,
                             is_deconstructive: def.is_deconstructive(),
+                            endpoint: def.endpoint.clone(),
                             collected_parts: vec![],
                         })
                         .collect();

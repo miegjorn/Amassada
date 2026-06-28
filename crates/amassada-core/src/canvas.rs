@@ -40,12 +40,17 @@ pub struct ParticipantDef {
     pub thinking_budget: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub modifiers: Vec<String>,
+    /// When set, dispatch POSTs to this HTTP endpoint instead of calling Anthropic directly.
+    /// The endpoint must implement POST /turn accepting TurnHttpRequest, returning TurnHttpResponse.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
 }
 
 impl ParticipantDef {
     pub fn is_moderator(&self) -> bool { self.persona == "moderator" }
     pub fn is_human(&self) -> bool { self.persona == "human" }
     pub fn is_deconstructive(&self) -> bool { self.modifiers.iter().any(|m| m == "deconstructive") }
+    pub fn has_endpoint(&self) -> bool { self.endpoint.is_some() }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

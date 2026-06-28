@@ -1,4 +1,5 @@
 use crate::error::{AmassadaError, Result};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct TurnRequest {
@@ -117,6 +118,56 @@ pub async fn dispatch(req: TurnRequest) -> Result<TurnResponse> {
     let output_tokens = json["usage"]["output_tokens"].as_u64().unwrap_or(0) as u32;
 
     Ok(TurnResponse { text, input_tokens, output_tokens })
+}
+
+/// JSON body sent to an agent endpoint's POST /turn
+#[derive(Debug, Serialize)]
+pub struct TurnHttpRequest {
+    pub system_prompt: String,
+    pub context: String,
+    pub model: String,
+    pub max_tokens: u32,
+}
+
+/// JSON body returned from an agent endpoint's POST /turn
+#[derive(Debug, Deserialize)]
+pub struct TurnHttpResponse {
+    pub text: String,
+    #[serde(default)]
+    pub input_tokens: u32,
+    #[serde(default)]
+    pub output_tokens: u32,
+}
+
+/// Dispatch a turn to an external agent endpoint instead of calling Anthropic directly.
+/// The endpoint must accept POST /turn with TurnHttpRequest body, return TurnHttpResponse.
+pub async fn dispatch_to_endpoint(endpoint_url: &str, req: TurnRequest) -> Result<TurnResponse> {
+    let client = reqwest::Client::new();
+    let turn_url = format!("{}/turn", endpoint_url.trim_end_matches('/'));
+    let body = TurnHttpRequest {
+        system_prompt: req.system_prompt.clone(),
+        context: req.context.clone(),
+        model: req.model.clone(),
+        max_tokens: req.max_tokens,
+    };
+    let resp = client
+        .post(&turn_url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| AmassadaError::Dispatch(format!("endpoint {}: {}", turn_url, e)))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(AmassadaError::Dispatch(format!("endpoint {} returned {}: {}", turn_url, status, body)));
+    }
+    let turn_resp: TurnHttpResponse = resp.json().await
+        .map_err(|e| AmassadaError::Dispatch(format!("endpoint response parse: {}", e)))?;
+    Ok(TurnResponse {
+        text: turn_resp.text,
+        input_tokens: turn_resp.input_tokens,
+        output_tokens: turn_resp.output_tokens,
+    })
 }
 
 /// Build the system prompt for an agent.

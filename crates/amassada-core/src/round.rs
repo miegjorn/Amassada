@@ -128,7 +128,17 @@ impl<'a> RoundRunner<'a> {
         let (meta, handles): (Vec<(AgentId, ActiveParticipant)>, Vec<_>) = prepared
             .into_iter()
             .map(|item| {
-                let handle = tokio::spawn(async move { dispatch::dispatch(item.req).await });
+                // When the participant has an endpoint set (agent-as-endpoint pattern),
+                // POST the turn to that pod instead of calling Anthropic directly. The
+                // pod owns MCP tool access and returns the assembled response text.
+                let endpoint = item.participant.endpoint.clone();
+                let req = item.req;
+                let handle = tokio::spawn(async move {
+                    match endpoint {
+                        Some(url) => dispatch::dispatch_to_endpoint(&url, req).await,
+                        None => dispatch::dispatch(req).await,
+                    }
+                });
                 ((item.agent_id, item.participant), handle)
             })
             .unzip();
@@ -358,6 +368,7 @@ mod tests {
                 model: None,
                 thinking_budget: None,
                 is_deconstructive: false,
+                endpoint: None,
                 collected_parts: vec![],
             },
         ];

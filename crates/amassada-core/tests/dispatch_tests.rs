@@ -1,4 +1,4 @@
-use amassada_core::dispatch::{TurnRequest, build_request_body, build_system_prompt, effective_max_tokens};
+use amassada_core::dispatch::{TurnRequest, TurnHttpRequest, TurnHttpResponse, build_request_body, build_system_prompt, effective_max_tokens};
 
 #[test]
 fn effective_max_tokens_no_budget_returns_original() {
@@ -74,4 +74,38 @@ fn dispatch_with_shared_context_uses_two_system_blocks() {
     // block 1: agent persona
     assert_eq!(system[1]["text"].as_str().unwrap(), "You are a test agent.");
     assert_eq!(system[1]["cache_control"]["type"].as_str().unwrap(), "ephemeral");
+}
+
+#[test]
+fn turn_http_request_serializes_all_fields() {
+    let req = TurnHttpRequest {
+        system_prompt: "You are Guilhem.".into(),
+        context: "What is the state of the stack?".into(),
+        model: "claude-sonnet-4-6".into(),
+        max_tokens: 4096,
+    };
+    let v = serde_json::to_value(&req).expect("TurnHttpRequest must serialize");
+    assert_eq!(v["system_prompt"].as_str().unwrap(), "You are Guilhem.");
+    assert_eq!(v["context"].as_str().unwrap(), "What is the state of the stack?");
+    assert_eq!(v["model"].as_str().unwrap(), "claude-sonnet-4-6");
+    assert_eq!(v["max_tokens"].as_u64().unwrap(), 4096);
+}
+
+#[test]
+fn turn_http_response_deserializes_with_default_token_counts() {
+    // input_tokens / output_tokens are #[serde(default)] — an endpoint may omit them.
+    let json = r#"{"text":"the stack is converging"}"#;
+    let resp: TurnHttpResponse = serde_json::from_str(json).expect("must deserialize without token counts");
+    assert_eq!(resp.text, "the stack is converging");
+    assert_eq!(resp.input_tokens, 0);
+    assert_eq!(resp.output_tokens, 0);
+}
+
+#[test]
+fn turn_http_response_deserializes_with_token_counts() {
+    let json = r#"{"text":"hi","input_tokens":120,"output_tokens":35}"#;
+    let resp: TurnHttpResponse = serde_json::from_str(json).expect("must deserialize with token counts");
+    assert_eq!(resp.text, "hi");
+    assert_eq!(resp.input_tokens, 120);
+    assert_eq!(resp.output_tokens, 35);
 }

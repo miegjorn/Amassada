@@ -10,6 +10,7 @@ const PLANNING: &str = include_str!("../../../canvases/stdlib/planning.yaml");
 const IMPLEMENT_SESSION: &str = include_str!("../../../canvases/stdlib/implement-session.yaml");
 const PROJECT_INTAKE: &str = include_str!("../../../canvases/stdlib/project-intake.yaml");
 const GOVERNANCE_DELIBERATION: &str = include_str!("../../../canvases/stdlib/governance-deliberation.yaml");
+const ORG_SESSION: &str = include_str!("../../../canvases/stdlib/org-session.yaml");
 
 /// Returns all stdlib canvases keyed by their `id` field.
 /// Panics on malformed YAML — stdlib canvases are compile-time constants, parse failures are bugs.
@@ -24,6 +25,7 @@ pub fn stdlib() -> HashMap<String, Canvas> {
         IMPLEMENT_SESSION,
         PROJECT_INTAKE,
         GOVERNANCE_DELIBERATION,
+        ORG_SESSION,
     ]
     .iter()
     .map(|yaml| {
