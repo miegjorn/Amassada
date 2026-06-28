@@ -94,7 +94,7 @@ pub enum EdgeType {
 
 // ── Structs ──────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Node {
     pub id:                NodeId,
     pub summary:           String,    // ≤20 tokens — the pointer text
@@ -104,7 +104,7 @@ pub struct Node {
     pub farga_ref:         Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Edge {
     pub from:      NodeId,
     pub to:        NodeId,
@@ -112,7 +112,7 @@ pub struct Edge {
     pub weight:    f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Via {
     pub from_layer: LayerKind,
     pub from_node:  NodeId,
