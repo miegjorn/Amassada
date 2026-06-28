@@ -1,0 +1,32 @@
+# Dream session canvas — nightly consolidation.
+#
+# This canvas is the Amassada-native form of the dream protocol.
+# Currently the dream CronJob triggers caissa listen /trigger/dream directly
+# (Guilhem uses the Claude CLI with MCP config). This canvas is the target
+# architecture for when dream becomes a full Amassada-mediated session:
+# multiple participants (dreamer + archivist), budget tracking, session graph.
+#
+# Use today: reference for understanding dream structure.
+# Use tomorrow: replace the direct CLI approach with POST /sessions/dream-{date}/message.
+
+id: dream-session
+description: |
+  Nightly stack consolidation. Three phases:
+  1. GATHER — read Farga signals (past 24h) + GitHub state across all repos
+  2. SYNTHESIZE — identify drift, improvement opportunities, cross-repo implications
+  3. ACT — create GitHub issues for actionable gaps; write dream report to Farga
+
+budget:
+  max_tokens: 200000
+  max_rounds: 1
+
+initial_participants:
+  - persona: guilhem
+    domain: fondament/guilhem
+    modifiers: [deconstructive]
+    endpoint: "http://guilhem.agents.svc.cluster.local:8080"
+    thinking_budget: 8000
+    description: |
+      Org agent and dream moderator. Holds the widest view across all sub-projects
+      and across time. Responsible for the gather and synthesize phases, and for
+      ensuring the act phase creates issues of substance — not noise.

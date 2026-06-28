@@ -1,3 +1,5 @@
+# Org session canvas — interactive collaboration with Guilhem (via Charradissa/Matrix).
+# Complement: dream-session.yaml — the nightly consolidation canvas.
 id: org-session
 version: "1.0.0"
 mode: interactive
