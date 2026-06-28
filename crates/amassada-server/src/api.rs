@@ -176,10 +176,13 @@ pub async fn post_message(
     // When a room_id is provided, look up the project registry and load the persona
     // from the fondament_persona field — this is the multi-tenant path. Otherwise
     // fall back to the canvas participant's domain field (legacy / single-tenant).
-    let domain_context = if let Some(ref room_id) = req.room_id {
+    //
+    // The project path also carries `mcp_scopes` from the registry entry so the
+    // receiving agent pod can restrict its MCP tool use to the declared set.
+    let (domain_context, mcp_scopes) = if let Some(ref room_id) = req.room_id {
         match s.project_registry.get_by_room(room_id) {
             Some(project) => {
-                match resolve_persona(&s.fondament_path, &project.fondament_persona) {
+                let ctx = match resolve_persona(&s.fondament_path, &project.fondament_persona) {
                     Ok(resolved) => resolved.context,
                     Err(e) => {
                         tracing::warn!(
@@ -188,15 +191,17 @@ pub async fn post_message(
                         );
                         resolve_domain_context(&s.fondament_path, &project.fondament_persona)
                     }
-                }
+                };
+                (ctx, project.mcp_scopes.clone())
             }
             None => {
                 tracing::warn!("room_id '{}' not found in project registry, using canvas domain", room_id);
-                resolve_domain_context(&s.fondament_path, &participant.domain)
+                (resolve_domain_context(&s.fondament_path, &participant.domain), vec![])
             }
         }
     } else {
-        resolve_domain_context(&s.fondament_path, &participant.domain)
+        // Org session (Guilhem) — no scope restriction.
+        (resolve_domain_context(&s.fondament_path, &participant.domain), vec![])
     };
     let system_prompt = build_system_prompt(&participant.persona, &domain_context, participant.is_moderator());
     let model = participant.model.clone()
@@ -211,6 +216,7 @@ pub async fn post_message(
         thinking_budget: participant.thinking_budget,
         api_key: None,
         shared_context: None,
+        mcp_scopes,
     };
 
     match dispatch::dispatch_to_endpoint(&endpoint, turn_req).await {

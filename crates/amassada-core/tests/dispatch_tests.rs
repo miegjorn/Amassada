@@ -46,6 +46,7 @@ fn dispatch_without_shared_context_uses_single_system_block() {
         thinking_budget: None,
         api_key: None,
         shared_context: None,
+        mcp_scopes: vec![],
     };
     let body = build_request_body(&req);
     let system = body["system"].as_array().expect("system must be an array");
@@ -64,6 +65,7 @@ fn dispatch_with_shared_context_uses_two_system_blocks() {
         thinking_budget: None,
         api_key: None,
         shared_context: Some("Graph context goes here.".into()),
+        mcp_scopes: vec![],
     };
     let body = build_request_body(&req);
     let system = body["system"].as_array().expect("system must be an array");
@@ -83,12 +85,44 @@ fn turn_http_request_serializes_all_fields() {
         context: "What is the state of the stack?".into(),
         model: "claude-sonnet-4-6".into(),
         max_tokens: 4096,
+        mcp_scopes: vec![],
     };
     let v = serde_json::to_value(&req).expect("TurnHttpRequest must serialize");
     assert_eq!(v["system_prompt"].as_str().unwrap(), "You are Guilhem.");
     assert_eq!(v["context"].as_str().unwrap(), "What is the state of the stack?");
     assert_eq!(v["model"].as_str().unwrap(), "claude-sonnet-4-6");
     assert_eq!(v["max_tokens"].as_u64().unwrap(), 4096);
+}
+
+#[test]
+fn turn_http_request_carries_mcp_scopes() {
+    let req = TurnHttpRequest {
+        system_prompt: "You are a project agent.".into(),
+        context: "What should I work on?".into(),
+        model: "claude-sonnet-4-6".into(),
+        max_tokens: 4096,
+        mcp_scopes: vec!["farga:read".into(), "farga:write:alpha".into()],
+    };
+    let v = serde_json::to_value(&req).expect("must serialize");
+    let scopes = v["mcp_scopes"].as_array().expect("mcp_scopes must be an array");
+    assert_eq!(scopes.len(), 2);
+    assert_eq!(scopes[0].as_str().unwrap(), "farga:read");
+    assert_eq!(scopes[1].as_str().unwrap(), "farga:write:alpha");
+}
+
+#[test]
+fn org_session_turn_has_empty_mcp_scopes() {
+    // Guilhem / org sessions carry no scope restriction.
+    let req = TurnHttpRequest {
+        system_prompt: "You are Guilhem.".into(),
+        context: "Hello.".into(),
+        model: "claude-sonnet-4-6".into(),
+        max_tokens: 4096,
+        mcp_scopes: vec![],
+    };
+    let v = serde_json::to_value(&req).unwrap();
+    let scopes = v["mcp_scopes"].as_array().unwrap();
+    assert!(scopes.is_empty(), "org sessions must carry no MCP scope restriction");
 }
 
 #[test]

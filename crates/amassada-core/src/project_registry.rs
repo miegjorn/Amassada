@@ -8,6 +8,14 @@ pub struct ProjectEntry {
     pub fondament_persona: String,
     pub matrix_rooms: Vec<String>,
     pub farga_project: String,
+    /// Declared MCP tool scopes for this project agent. Propagated verbatim into
+    /// every turn dispatched on behalf of this project so the receiving agent pod
+    /// can restrict itself to the declared tool set.
+    ///
+    /// Convention: `"farga:read"`, `"farga:write:<project>"`. Absent means empty
+    /// (no scope restriction declared — use only for org-level agents like Guilhem).
+    #[serde(default)]
+    pub mcp_scopes: Vec<String>,
 }
 
 /// Maps project ids and Matrix room ids to their `ProjectEntry`.
