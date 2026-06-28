@@ -4,6 +4,7 @@ mod ws;
 use axum::{routing::{get, post}, Router};
 use api::ServerState;
 use amassada_core::types::SessionEvent;
+use amassada_core::project_registry::ProjectRegistry;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
@@ -17,6 +18,18 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or("canvases/stdlib".into());
     let farga_url = std::env::var("FARGA_URL").ok();
     let fondament_path = std::env::var("FONDAMENT_PATH").unwrap_or("/fondament".into());
+    let projects_path = std::env::var("AMASSADA_PROJECTS_PATH")
+        .unwrap_or("config/projects.toml".into());
+
+    let project_registry = {
+        let path = std::path::Path::new(&projects_path);
+        if path.exists() {
+            ProjectRegistry::load(path)?
+        } else {
+            tracing::warn!("no project registry at {}, starting empty", projects_path);
+            ProjectRegistry::default()
+        }
+    };
 
     let (event_tx, _) = broadcast::channel::<SessionEvent>(256);
 
@@ -26,6 +39,7 @@ async fn main() -> anyhow::Result<()> {
         event_tx,
         farga_url,
         fondament_path,
+        project_registry: Arc::new(project_registry),
     };
 
     let app = Router::new()
