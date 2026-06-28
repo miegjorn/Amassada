@@ -3,6 +3,7 @@ use amassada_core::types::{SessionState, SessionEvent};
 use amassada_core::canvas::CanvasLibrary;
 use amassada_core::dispatch::{self, TurnRequest, build_system_prompt};
 use amassada_core::project_registry::ProjectRegistry;
+use amassada_core::fondament::resolve_persona;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -94,6 +95,10 @@ pub async fn publish_event(
 pub struct MessageRequest {
     pub content: String,
     pub sender: String,
+    /// Matrix room id. When provided, Amassada looks up the project in the registry
+    /// and resolves its Fondament persona instead of using the canvas participant's
+    /// domain field — enabling multi-tenant dispatch from a single Amassada instance.
+    pub room_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -168,7 +173,31 @@ pub async fn post_message(
     let endpoint = participant.endpoint.clone().expect("has_endpoint guaranteed Some");
 
     // 4. Resolve the domain context from Fondament and assemble the system prompt.
-    let domain_context = resolve_domain_context(&s.fondament_path, &participant.domain);
+    // When a room_id is provided, look up the project registry and load the persona
+    // from the fondament_persona field — this is the multi-tenant path. Otherwise
+    // fall back to the canvas participant's domain field (legacy / single-tenant).
+    let domain_context = if let Some(ref room_id) = req.room_id {
+        match s.project_registry.get_by_room(room_id) {
+            Some(project) => {
+                match resolve_persona(&s.fondament_path, &project.fondament_persona) {
+                    Ok(resolved) => resolved.context,
+                    Err(e) => {
+                        tracing::warn!(
+                            "fondament persona resolution failed for room {} ({}): {}",
+                            room_id, project.fondament_persona, e
+                        );
+                        resolve_domain_context(&s.fondament_path, &project.fondament_persona)
+                    }
+                }
+            }
+            None => {
+                tracing::warn!("room_id '{}' not found in project registry, using canvas domain", room_id);
+                resolve_domain_context(&s.fondament_path, &participant.domain)
+            }
+        }
+    } else {
+        resolve_domain_context(&s.fondament_path, &participant.domain)
+    };
     let system_prompt = build_system_prompt(&participant.persona, &domain_context, participant.is_moderator());
     let model = participant.model.clone()
         .unwrap_or_else(|| "claude-sonnet-4-6".to_string());
