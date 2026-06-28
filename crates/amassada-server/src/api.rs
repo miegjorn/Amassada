@@ -195,8 +195,15 @@ pub async fn post_message(
                 (ctx, project.mcp_scopes.clone())
             }
             None => {
-                tracing::warn!("room_id '{}' not found in project registry, using canvas domain", room_id);
-                (resolve_domain_context(&s.fondament_path, &participant.domain), vec![])
+                // Not in registry: try fondament persona resolution (YAML definition)
+                // before falling back to markdown-only domain context.
+                match resolve_persona(&s.fondament_path, &participant.domain) {
+                    Ok(resolved) => (resolved.context, vec![]),
+                    Err(_) => {
+                        tracing::warn!("room {} not in registry; fondament persona '{}' not found, using fallback", room_id, participant.domain);
+                        (resolve_domain_context(&s.fondament_path, &participant.domain), vec![])
+                    }
+                }
             }
         }
     } else {
