@@ -110,6 +110,11 @@ pub struct ActiveParticipant {
     pub model: Option<String>,
     pub thinking_budget: Option<u32>,
     pub is_deconstructive: bool,
+    /// When set, this participant's turn is dispatched to an external agent endpoint
+    /// (POST {endpoint}/turn) instead of calling Anthropic directly. Carried from
+    /// `ParticipantDef::endpoint`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
     #[serde(skip)]
     pub collected_parts: Vec<fondament_core::types::ComposedPart>,
 }

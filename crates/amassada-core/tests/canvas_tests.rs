@@ -57,3 +57,54 @@ fn canvas_selector_finds_best_match() {
     assert_eq!(canvas.id, "debate");
     assert!(score > 0.0);
 }
+
+#[test]
+fn participant_endpoint_field_parses_and_reports() {
+    let yaml = r#"
+id: org-session
+version: "1.0.0"
+mode: interactive
+selector:
+  description: "Org conversation"
+  tags: [org]
+  examples: ["state of the stack?"]
+initial_participants:
+  - persona: guilhem
+    domain: fondament/guilhem
+    modifiers: [deconstructive]
+    endpoint: "http://guilhem.agents.svc.cluster.local:8080"
+  - persona: builder
+    domain: fondament/senior-engineer
+budget:
+  total_tokens: 100000
+  pools:
+    main_session: 80000
+    consultations: 15000
+    mod_whisper: 5000
+consultation:
+  max_turns: 2
+  min_response_tokens: 50
+rounds:
+  min: 1
+  max: 999
+  convergence_modifier: 1.0
+  context_window: 20
+human:
+  slot: true
+output:
+  format: markdown
+  sections: []
+"#;
+    let canvas = Canvas::from_yaml(yaml).expect("org-session canvas must parse");
+    let guilhem = &canvas.initial_participants[0];
+    assert!(guilhem.has_endpoint(), "guilhem participant must report an endpoint");
+    assert_eq!(
+        guilhem.endpoint.as_deref(),
+        Some("http://guilhem.agents.svc.cluster.local:8080")
+    );
+
+    // A participant without an endpoint must default to None / has_endpoint() == false.
+    let builder = &canvas.initial_participants[1];
+    assert!(!builder.has_endpoint(), "participant without endpoint must report no endpoint");
+    assert_eq!(builder.endpoint, None);
+}
