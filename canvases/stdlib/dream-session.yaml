@@ -17,7 +17,7 @@ description: |
   3. ACT — create GitHub issues for actionable gaps; write dream report to Farga
 
 budget:
-  max_tokens: 200000
+  total_tokens: 200000
   max_rounds: 1
 
 initial_participants:
