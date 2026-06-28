@@ -14,6 +14,15 @@ matrix_rooms = ["!room3:occitane.guilhem"]
 farga_project = "beta"
 "#;
 
+const PROJECT_WITH_SCOPES_TOML: &str = r#"
+[[projects]]
+id = "scoped"
+fondament_persona = "fondament/projects/scoped.yaml"
+matrix_rooms = ["!scope-room:occitane.guilhem"]
+farga_project = "scoped"
+mcp_scopes = ["farga:read", "farga:write:scoped"]
+"#;
+
 #[test]
 fn lookup_by_project_id() {
     let reg = ProjectRegistry::from_toml(TWO_PROJECTS_TOML).unwrap();
@@ -55,6 +64,30 @@ fn unknown_room_id_returns_none() {
 fn empty_toml_yields_empty_registry() {
     let reg = ProjectRegistry::from_toml("").unwrap();
     assert!(reg.get_by_id("anything").is_none());
+}
+
+// ── mcp_scopes ────────────────────────────────────────────────────────────────
+
+#[test]
+fn project_entry_with_mcp_scopes_parses() {
+    let reg = ProjectRegistry::from_toml(PROJECT_WITH_SCOPES_TOML).unwrap();
+    let entry = reg.get_by_id("scoped").expect("scoped should exist");
+    assert_eq!(entry.mcp_scopes, vec!["farga:read", "farga:write:scoped"]);
+}
+
+#[test]
+fn project_entry_without_mcp_scopes_defaults_to_empty() {
+    let reg = ProjectRegistry::from_toml(TWO_PROJECTS_TOML).unwrap();
+    let alpha = reg.get_by_id("alpha").unwrap();
+    assert!(alpha.mcp_scopes.is_empty(), "mcp_scopes must default to empty when absent");
+}
+
+#[test]
+fn mcp_scopes_accessible_via_room_lookup() {
+    let reg = ProjectRegistry::from_toml(PROJECT_WITH_SCOPES_TOML).unwrap();
+    let entry = reg.get_by_room("!scope-room:occitane.guilhem").expect("room lookup must work");
+    assert!(entry.mcp_scopes.contains(&"farga:write:scoped".to_string()),
+        "scope lookup via room must carry mcp_scopes");
 }
 
 #[test]

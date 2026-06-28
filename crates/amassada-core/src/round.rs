@@ -120,6 +120,7 @@ impl<'a> RoundRunner<'a> {
                 thinking_budget: participant.thinking_budget,
                 api_key: None,
                 shared_context: shared_context.clone(),
+                mcp_scopes: vec![],
             };
             prepared.push(PreparedItem { agent_id: agent_id.clone(), participant, req });
         }
@@ -252,6 +253,7 @@ impl<'a> RoundRunner<'a> {
                         thinking_budget: None,
                         api_key: None,
                         shared_context: None,
+                        mcp_scopes: vec![],
                     };
 
                     if let Ok(resp) = dispatch::dispatch(req).await {

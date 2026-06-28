@@ -38,6 +38,7 @@ pub async fn synthesize_artifacts(
                 thinking_budget: None,
                 api_key: None,
                 shared_context: None,
+        mcp_scopes: vec![],
             };
             let response = dispatch::dispatch(req).await?;
             Ok::<OutputArtifact, crate::error::AmassadaError>(OutputArtifact {

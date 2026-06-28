@@ -15,6 +15,10 @@ pub struct TurnRequest {
     /// When Some, system becomes two cached blocks: graph ctx first, then persona.
     /// When None, single-block behavior is preserved.
     pub shared_context: Option<String>,
+    /// MCP tool scopes granted to this turn's agent. Propagated verbatim into
+    /// `TurnHttpRequest` so the receiving agent pod can restrict its tool use.
+    /// Empty means no scope restriction (org-level agents like Guilhem).
+    pub mcp_scopes: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -127,6 +131,9 @@ pub struct TurnHttpRequest {
     pub context: String,
     pub model: String,
     pub max_tokens: u32,
+    /// MCP tool scopes granted to this turn. The receiving agent pod uses these
+    /// to restrict which MCP tools it invokes. Empty means no restriction.
+    pub mcp_scopes: Vec<String>,
 }
 
 /// JSON body returned from an agent endpoint's POST /turn
@@ -149,6 +156,7 @@ pub async fn dispatch_to_endpoint(endpoint_url: &str, req: TurnRequest) -> Resul
         context: req.context.clone(),
         model: req.model.clone(),
         max_tokens: req.max_tokens,
+        mcp_scopes: req.mcp_scopes.clone(),
     };
     let resp = client
         .post(&turn_url)

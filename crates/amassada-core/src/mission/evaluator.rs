@@ -60,6 +60,7 @@ impl CompletionEvaluator for ClaudeEvaluator {
             thinking_budget: None,
             api_key: None,
             shared_context: None,
+        mcp_scopes: vec![],
         }).await?;
 
         let val: serde_json::Value = serde_json::from_str(resp.text.trim())
