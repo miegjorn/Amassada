@@ -356,6 +356,26 @@ Governance deliberation on a proposed Fondament archetype or cross-project stand
 - Rounds: 3 – 6, context window 20, up to 2 consultation turns
 - Output sections: Proposed Archetype Change, Risk Assessment, Agent Votes, Impact Analysis (optional), Recommendation
 
+### `org-session.yaml` — mode: auto
+
+Default canvas for Charradissa-routed Matrix conversations with the Guilhem org agent. Used when a room is registered under `[[agents.project]]` in `charradissa.toml` and no explicit canvas is specified. Single participant (Guilhem) with the deconstructive modifier enabled.
+
+### `dream-session.yaml` — mode: auto (scheduled)
+
+Nightly consolidation canvas. Canvases can be **interactive** (triggered by a user message routed through Charradissa) or **scheduled** (triggered by a CronJob POSTing directly to the agent endpoint). Dream is scheduled: the `guilhem-dream` CronJob fires at 03:00 UTC daily and POSTs to `POST /trigger/dream` on the Guilhem pod.
+
+Three-phase protocol:
+1. **Gather** — read Farga signals from the past 24h (`search_signals since=yesterday`) + fetch GitHub commits, open issues, and PRs across all 8 repos
+2. **Synthesize** — identify cross-repo implications, architectural drift, pattern signals, and stack trajectory
+3. **Act** — create 3–8 GitHub issues for actionable improvement opportunities (dedup check before each); write a `source: dream` signal to Farga
+
+- Participants: `guilhem` (fondament/guilhem) with `deconstructive` modifier, `thinking_budget: 8000`
+- Budget: 200,000 tokens, 1 round
+- Model: `claude-sonnet-4-6` (synthesis-grade; configurable via `dream.model` in guilhem Helm values)
+- Output: GitHub issues in appropriate repos + Farga dream signal
+
+This canvas is the target architecture. Currently the CronJob drives the dream via the Claude CLI directly; migrating to a full Amassada-mediated session (with budget tracking and session graph) is the next step.
+
 ---
 
 ## Channel types
