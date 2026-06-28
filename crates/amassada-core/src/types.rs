@@ -109,4 +109,7 @@ pub struct ActiveParticipant {
     pub is_moderator: bool,
     pub model: Option<String>,
     pub thinking_budget: Option<u32>,
+    pub is_deconstructive: bool,
+    #[serde(skip)]
+    pub collected_parts: Vec<fondament_core::types::ComposedPart>,
 }

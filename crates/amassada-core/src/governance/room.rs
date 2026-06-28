@@ -16,6 +16,7 @@ pub fn address_to_participant(addr: &str) -> ParticipantDef {
         model: None,
         authority: None,
         thinking_budget: None,
+        modifiers: vec![],
     }
 }
 
