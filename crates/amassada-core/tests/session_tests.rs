@@ -93,5 +93,5 @@ async fn round_runner_threads_shared_context() {
 
     let result = result.expect("RoundRunner::run with shared_context=Some should succeed");
     assert!(!result.should_close, "empty-participant round should not set should_close");
-    assert!(result.proposal_ops.is_empty(), "no proposals expected with zero participants");
+    assert!(result.agent_proposal_ops.is_empty() && result.moderator_proposal_ops.is_empty(), "no proposals expected with zero participants");
 }

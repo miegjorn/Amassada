@@ -26,8 +26,11 @@ pub struct RoundResult {
     pub should_close: bool,
     pub approval_requested: Option<String>,
     pub canvas_switch: Option<String>,
-    /// Graph proposals collected from all agents in this round.
-    pub proposal_ops: Vec<ProposalOp>,
+    /// Graph proposals from non-moderator agents in this round.
+    pub agent_proposal_ops: Vec<ProposalOp>,
+    /// Graph proposals from the moderator in this round.
+    /// Applied after agent proposals so moderator writes take precedence.
+    pub moderator_proposal_ops: Vec<ProposalOp>,
     /// Concatenated main-block content from all turns, for extraction.
     pub round_transcript: String,
 }
@@ -38,7 +41,8 @@ impl<'a> RoundRunner<'a> {
             should_close: false,
             approval_requested: None,
             canvas_switch: None,
-            proposal_ops: vec![],
+            agent_proposal_ops: vec![],
+            moderator_proposal_ops: vec![],
             round_transcript: String::new(),
         };
 
@@ -123,10 +127,15 @@ impl<'a> RoundRunner<'a> {
                 .find_map(|b| if let AgentBlock::Main { content } = b { Some(content.clone()) } else { None })
                 .unwrap_or_else(|| response.text.clone());
 
-            // Collect graph proposals from this turn
+            // Collect graph proposals from this turn, routing by role so that
+            // moderator proposals can be applied last (= wins on conflict).
             for block in &parsed.agent_blocks {
                 if let AgentBlock::GraphProposal { ops } = block {
-                    result.proposal_ops.extend(ops.clone());
+                    if participant.is_moderator {
+                        result.moderator_proposal_ops.extend(ops.clone());
+                    } else {
+                        result.agent_proposal_ops.extend(ops.clone());
+                    }
                 }
             }
 
@@ -315,7 +324,7 @@ mod tests {
 
         let result = runner.run(None).await.expect("round must complete");
         assert!(!result.should_close, "round should not request close");
-        assert!(result.proposal_ops.is_empty(), "no proposals expected");
+        assert!(result.agent_proposal_ops.is_empty() && result.moderator_proposal_ops.is_empty(), "no proposals expected");
 
         let events = transport.events();
         assert!(

@@ -126,16 +126,24 @@ impl SessionEngine {
         let mut current_round = 1u32;
 
         while !state.is_terminal() && current_round <= active_canvas.rounds.max {
-            // Round 1 gets no shared_context; subsequent rounds get a graph snapshot
-            // rooted at frontier nodes.
-            let shared_context = if current_round == 1 {
+            // Skip shared_context only when the graph is genuinely empty (new
+            // session, graph.version == 0).  For resumed sessions graph.version > 0
+            // on entry, so round 1 of a resumed session must still receive the
+            // existing graph content.  Also guard against an empty frontier set —
+            // retrieve(&[], 1) returns a sparse header-only blob that wastes a
+            // cache slot without providing useful context.
+            let shared_context = if current_round == 1 && self.graph.version == 0 {
                 None
             } else {
                 let frontier_ids: Vec<NodeId> = self.graph.layers.causal.nodes.values()
                     .filter(|n| n.node_type == NodeType::Frontier)
                     .map(|n| n.id.clone())
                     .collect();
-                Some(self.graph.retrieve(&frontier_ids, 1))
+                if frontier_ids.is_empty() {
+                    None
+                } else {
+                    Some(self.graph.retrieve(&frontier_ids, 1))
+                }
             };
 
             let mut runner = RoundRunner {
@@ -151,9 +159,11 @@ impl SessionEngine {
 
             // ── Round-boundary graph update ───────────────────────────────────
 
-            // 1. Apply agent proposals (pure conversion, no API call).
-            let proposals_delta = proposals_to_delta(result.proposal_ops);
-            self.graph.apply_delta(proposals_delta);
+            // 1. Apply proposals: agent proposals first, then moderator proposals.
+            //    Because apply_delta is last-write-wins, applying moderator last
+            //    gives moderator precedence on any conflicting node/edge update.
+            self.graph.apply_delta(proposals_to_delta(result.agent_proposal_ops));
+            self.graph.apply_delta(proposals_to_delta(result.moderator_proposal_ops));
 
             // 2. Extract additional delta from transcript via Haiku (non-fatal).
             if !result.round_transcript.is_empty() {
