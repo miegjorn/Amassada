@@ -4,6 +4,7 @@ use crate::channels::whisper::WhisperQueue;
 use crate::context::ContextBuilder;
 use crate::dispatch::{self, TurnRequest, build_system_prompt};
 use crate::error::Result;
+use crate::graph::SessionGraph;
 use crate::moderator::ModeratorExecutor;
 use crate::transport::Transport;
 use crate::types::{ActiveParticipant, AgentId, SessionEvent, TurnRecord};
@@ -20,6 +21,7 @@ pub struct RoundRunner<'a> {
     pub whisper_queue: &'a mut WhisperQueue,
     pub budget: &'a mut BudgetLedger,
     pub transport: &'a dyn Transport,
+    pub graph: &'a SessionGraph,
 }
 
 pub struct RoundResult {
@@ -74,11 +76,41 @@ impl<'a> RoundRunner<'a> {
                 whispers,
                 None, // moderator envelope built separately for moderator
             );
-            let system_prompt = build_system_prompt(
-                &participant.persona,
-                &participant.domain,
-                participant.is_moderator,
-            );
+            let system_prompt = if participant.is_deconstructive {
+                use fondament_core::resolver::build_deconstructive_preamble;
+                use fondament_core::types::{ComposedPart, PartKind};
+
+                // Start with the participant's existing collected_parts (Domain, Discipline, Stance)
+                let mut parts = participant.collected_parts.clone();
+
+                // Append frontier nodes from the session graph
+                // Frontier = activation_weight > 0.6 AND epistemic_state < 0.5
+                for node in self.graph.layers.causal.nodes.values()
+                    .chain(self.graph.layers.epistemic.nodes.values())
+                    .chain(self.graph.layers.semantic.nodes.values())
+                    .chain(self.graph.layers.economic.nodes.values())
+                {
+                    if node.activation_weight > 0.6 && node.epistemic_state < 0.5 {
+                        parts.push(ComposedPart {
+                            kind: PartKind::SessionNode,
+                            name: node.id.0.clone(),
+                            weight: node.activation_weight,
+                            corpus_ref: node.farga_ref.clone(),
+                        });
+                    }
+                }
+
+                // Build deconstructive preamble, prepend to base system prompt
+                let preamble = build_deconstructive_preamble(&parts);
+                let base = build_system_prompt(&participant.persona, &participant.domain, participant.is_moderator);
+                format!("{}\n\n{}", preamble, base)
+            } else {
+                build_system_prompt(
+                    &participant.persona,
+                    &participant.domain,
+                    participant.is_moderator,
+                )
+            };
             let model = participant.model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_string());
             let req = TurnRequest {
                 system_prompt,
@@ -325,11 +357,14 @@ mod tests {
                 turns_taken: 0,
                 model: None,
                 thinking_budget: None,
+                is_deconstructive: false,
+                collected_parts: vec![],
             },
         ];
         let mut ctx = ContextBuilder::new(8);
         let mut wq = WhisperQueue::new();
         let mut budget = ample_budget();
+        let graph = crate::graph::SessionGraph::new("test-session");
 
         let mut runner = RoundRunner {
             round_num: 1,
@@ -338,6 +373,7 @@ mod tests {
             whisper_queue: &mut wq,
             budget: &mut budget,
             transport: &transport,
+            graph: &graph,
         };
 
         let result = runner.run(None).await.expect("round must complete");
@@ -366,6 +402,7 @@ mod tests {
         let mut ctx = ContextBuilder::new(8);
         let mut wq = WhisperQueue::new();
         let mut budget = ample_budget();
+        let graph = crate::graph::SessionGraph::new("test-session");
 
         let mut runner = RoundRunner {
             round_num: 2,
@@ -374,6 +411,7 @@ mod tests {
             whisper_queue: &mut wq,
             budget: &mut budget,
             transport: &transport,
+            graph: &graph,
         };
 
         let _result = runner.run(None).await.expect("round must complete");
@@ -387,5 +425,66 @@ mod tests {
         assert_eq!(turn_count, 0, "zero agents must produce zero TurnCompleted events");
         // context_builder must also be empty — no phantom pushes
         assert_eq!(ctx.len(), 0, "context_builder must have 0 turns after empty round");
+    }
+
+    /// Given a participant with `is_deconstructive: true` and a session graph
+    /// containing a frontier node (activation_weight > 0.6, epistemic_state < 0.5),
+    /// `build_deconstructive_preamble` with the augmented parts must produce a
+    /// string containing "session-node".
+    #[test]
+    fn deconstructive_preamble_includes_frontier_nodes() {
+        use crate::graph::{GraphDelta as ExtractorDelta, Node, NodeId, NodeType};
+        use crate::graph::extractor::GraphDelta;
+        use fondament_core::resolver::build_deconstructive_preamble;
+        use fondament_core::types::{ComposedPart, PartKind};
+
+        // Build a session graph with one frontier node
+        let mut graph = crate::graph::SessionGraph::new("preamble-test");
+        let delta = GraphDelta {
+            new_nodes: vec![Node {
+                id: NodeId("frontier-node-1".into()),
+                summary: "a high-activation open question".into(),
+                node_type: NodeType::Frontier,
+                activation_weight: 0.8,
+                epistemic_state: 0.3,
+                farga_ref: None,
+            }],
+            new_edges: vec![],
+            new_vias: vec![],
+            updates: vec![],
+        };
+        graph.apply_delta(delta);
+
+        // Simulate what RoundRunner does for a deconstructive participant
+        let collected_parts: Vec<ComposedPart> = vec![];
+        let mut parts = collected_parts;
+
+        for node in graph.layers.causal.nodes.values()
+            .chain(graph.layers.epistemic.nodes.values())
+            .chain(graph.layers.semantic.nodes.values())
+            .chain(graph.layers.economic.nodes.values())
+        {
+            if node.activation_weight > 0.6 && node.epistemic_state < 0.5 {
+                parts.push(ComposedPart {
+                    kind: PartKind::SessionNode,
+                    name: node.id.0.clone(),
+                    weight: node.activation_weight,
+                    corpus_ref: node.farga_ref.clone(),
+                });
+            }
+        }
+
+        let preamble = build_deconstructive_preamble(&parts);
+
+        assert!(
+            preamble.contains("session-node"),
+            "preamble must contain 'session-node' for frontier nodes, got:\n{}",
+            preamble
+        );
+        assert!(
+            preamble.contains("frontier-node-1"),
+            "preamble must contain the node id 'frontier-node-1', got:\n{}",
+            preamble
+        );
     }
 }

@@ -3,6 +3,7 @@ use amassada_core::budget::BudgetLedger;
 use amassada_core::canvas::Canvas;
 use amassada_core::channels::whisper::WhisperQueue;
 use amassada_core::context::ContextBuilder;
+use amassada_core::graph::SessionGraph;
 use amassada_core::round::RoundRunner;
 use amassada_core::session::SessionEngine;
 use amassada_core::transport::local::LocalTransport;
@@ -77,6 +78,7 @@ async fn round_runner_threads_shared_context() {
     let mut context_builder = ContextBuilder::new(8192);
     let mut whisper_queue = WhisperQueue::new();
     let mut budget = BudgetLedger::new(10_000, 8_000, 1_500, 500);
+    let graph = SessionGraph::new("test-session");
 
     let mut runner = RoundRunner {
         round_num: 2,
@@ -85,6 +87,7 @@ async fn round_runner_threads_shared_context() {
         whisper_queue: &mut whisper_queue,
         budget: &mut budget,
         transport: &transport,
+        graph: &graph,
     };
 
     let result = runner

@@ -38,11 +38,14 @@ pub struct ParticipantDef {
     pub authority: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking_budget: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modifiers: Vec<String>,
 }
 
 impl ParticipantDef {
     pub fn is_moderator(&self) -> bool { self.persona == "moderator" }
     pub fn is_human(&self) -> bool { self.persona == "human" }
+    pub fn is_deconstructive(&self) -> bool { self.modifiers.iter().any(|m| m == "deconstructive") }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

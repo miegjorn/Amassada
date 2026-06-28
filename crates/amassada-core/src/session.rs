@@ -109,6 +109,8 @@ impl SessionEngine {
                 is_moderator: def.is_moderator(),
                 model: def.model.clone(),
                 thinking_budget: def.thinking_budget,
+                is_deconstructive: def.is_deconstructive(),
+                collected_parts: vec![],
             })
             .collect();
 
@@ -153,6 +155,7 @@ impl SessionEngine {
                 whisper_queue: &mut whisper_queue,
                 budget: &mut budget,
                 transport: &*self.transport,
+                graph: &self.graph,
             };
 
             let result = runner.run(shared_context).await?;
@@ -201,6 +204,8 @@ impl SessionEngine {
                             is_moderator: def.is_moderator(),
                             model: def.model.clone(),
                             thinking_budget: def.thinking_budget,
+                            is_deconstructive: def.is_deconstructive(),
+                            collected_parts: vec![],
                         })
                         .collect();
                 } else {
