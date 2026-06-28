@@ -21,6 +21,21 @@ pub struct ResolvedPersona {
 /// Returns the persona's context string and the composition parts to use in the
 /// deconstructive preamble. Returns `Err(Config)` when the definitions tree cannot
 /// be loaded or the persona id is not found.
+///
+/// ## Resolution fallback chain (two-tier)
+///
+/// This function is **tier 1** — it queries the `DefinitionTree` (YAML-based structured
+/// definitions under `definitions/`). If it succeeds, the `context` field and the full
+/// `extends` chain (Discipline + Stance parts) are returned.
+///
+/// When this function returns `Err`, callers in `api.rs::post_message` fall back to
+/// **tier 2**: `resolve_domain_context()`, which does a markdown scan across conventional
+/// file layouts (`{domain}.md`, `{domain}/persona.md`, `{domain}/README.md`). If none of
+/// those files exist either, a generic descriptor (`"You operate in the {domain} domain."`)
+/// is produced as a last resort so dispatch never hard-fails on missing persona context.
+///
+/// The receiving agent pod (e.g. Guilhem) holds its own authoritative context regardless;
+/// the fallback exists so Amassada can still assemble a minimal system prompt.
 pub fn resolve_persona(fondament_path: &str, persona_id: &str) -> Result<ResolvedPersona> {
     let defs_path = std::path::Path::new(fondament_path).join("definitions");
     let tree = DefinitionTree::load(&defs_path)

@@ -189,6 +189,9 @@ pub async fn post_message(
                             "fondament persona resolution failed for room {} ({}): {}",
                             room_id, project.fondament_persona, e
                         );
+                        // Tier-1 (DefinitionTree) lookup failed — fall back to tier-2:
+                        // markdown scan across conventional file layouts under fondament_path.
+                        // See fondament::resolve_persona for the full fallback chain description.
                         resolve_domain_context(&s.fondament_path, &project.fondament_persona)
                     }
                 };

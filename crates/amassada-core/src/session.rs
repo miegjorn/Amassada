@@ -269,7 +269,10 @@ impl SessionEngine {
             canvas_id: active_canvas.id.clone(),
             goal: self.goal.clone(),
             artifacts,
-            total_tokens: 0, // TODO: sum from budget ledger
+            total_tokens: 0, // Known gap: token aggregation from the budget ledger is not yet
+                             // implemented. BudgetLedger tracks per-pool consumption internally
+                             // but SessionOutput has no path to read it out. This field is
+                             // always 0 in production until that plumbing is added.
         };
 
         self.transport.emit_output(&output).await?;

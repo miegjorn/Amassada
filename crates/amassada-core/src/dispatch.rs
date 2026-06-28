@@ -90,11 +90,15 @@ pub async fn dispatch(req: TurnRequest) -> Result<TurnResponse> {
         .header("anthropic-version", "2023-06-01")
         .header("content-type", "application/json");
 
-    // prompt-caching beta is always on; interleaved-thinking only when budgeted.
-    request_builder = request_builder.header("anthropic-beta", "prompt-caching-2024-07-31");
-    if req.thinking_budget.filter(|&b| b > 0).is_some() {
-        request_builder = request_builder.header("anthropic-beta", "interleaved-thinking-2025-05-14");
-    }
+    // prompt-caching beta is always on; interleaved-thinking is added when thinking is budgeted.
+    // Both flags must be sent in a single comma-separated anthropic-beta header — duplicate
+    // header values are not supported by the Anthropic API gateway and will be rejected.
+    let beta_header = if req.thinking_budget.filter(|&b| b > 0).is_some() {
+        "prompt-caching-2024-07-31,interleaved-thinking-2025-05-14"
+    } else {
+        "prompt-caching-2024-07-31"
+    };
+    request_builder = request_builder.header("anthropic-beta", beta_header);
 
     let resp = request_builder
         .json(&body)
@@ -178,7 +182,19 @@ pub async fn dispatch_to_endpoint(endpoint_url: &str, req: TurnRequest) -> Resul
     })
 }
 
-/// Build the system prompt for an agent.
+/// Build the system prompt for an agent turn.
+///
+/// Composes three layers into a single string:
+/// 1. A persona declaration (`"You are a {persona} agent."`).
+/// 2. The Fondament-resolved domain context body (`domain_context`), which may span
+///    disciplines and stances from the extends chain.
+/// 3. Block-protocol syntax instructions — the `[MAIN]`, `[CONSULT]`, `[BTW]`, and
+///    `[LEAVE]` markers that structure every agent response, plus moderator-only blocks
+///    (`[INVITE]`, `[RELEASE]`, `[CLOSE]`, etc.) when `is_moderator` is true.
+///
+/// The block markers are deliberately included in the system prompt. They are **not**
+/// stripped here — that is Charradissa's responsibility before Matrix display.
+/// Stripping them inside Amassada would break the block parser on the round return path.
 pub fn build_system_prompt(
     persona: &str,
     domain_context: &str,

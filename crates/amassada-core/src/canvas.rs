@@ -187,7 +187,7 @@ pub async fn select_canvas_with_llm(query: &str, library: &CanvasLibrary) -> Str
     match dispatch(TurnRequest {
         system_prompt: system.into(),
         context,
-        model: "claude-haiku-4-5-20251001".into(),
+        model: "claude-haiku-4-5".into(),
         max_tokens: 32,
         thinking_budget: None,
         api_key: None,
