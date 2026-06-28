@@ -1,5 +1,40 @@
 use amassada_core::graph::*;
 
+// ── retrieve helpers ──────────────────────────────────────────────────────────
+
+fn make_node(id: &str, summary: &str, node_type: NodeType, ep: f32) -> (NodeId, Node) {
+    let nid = NodeId(id.to_string());
+    let node = Node {
+        id: nid.clone(),
+        summary: summary.to_string(),
+        node_type,
+        activation_weight: 0.8,
+        epistemic_state: ep,
+        farga_ref: None,
+    };
+    (nid, node)
+}
+
+fn make_edge(from: &str, to: &str, edge_type: EdgeType) -> Edge {
+    Edge {
+        from: NodeId(from.to_string()),
+        to: NodeId(to.to_string()),
+        edge_type,
+        weight: 0.8,
+    }
+}
+
+fn make_via(from_node: &str, to_node: &str, strength: f32) -> Via {
+    Via {
+        from_layer: LayerKind::Causal,
+        from_node: NodeId(from_node.to_string()),
+        to_layer: LayerKind::Semantic,
+        to_node: NodeId(to_node.to_string()),
+        via_type: ViaType::AnalogyOf,
+        strength,
+    }
+}
+
 // ── core types ──────────────────────────────────────────────────────────────
 
 #[test]
@@ -138,5 +173,106 @@ fn serialize_active_vias_only() {
         output.contains("N3 →"),
         "strong via (strength 0.85) must appear in VIAS section.\nOutput:\n{}",
         output
+    );
+}
+
+// ── retrieve ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn retrieve_returns_scope_nodes() {
+    let mut graph = SessionGraph::new("ret-scope");
+    let (n1, node) = make_node("N1", "scope-node-summary", NodeType::Axiom, 0.9);
+    graph.layers.causal.nodes.insert(n1.clone(), node);
+
+    let output = graph.retrieve(&[n1], 1);
+    assert!(
+        output.contains("scope-node-summary"),
+        "scope node must appear in retrieve output\n{}",
+        output
+    );
+}
+
+#[test]
+fn retrieve_follows_one_hop_edges() {
+    let mut graph = SessionGraph::new("ret-edges");
+    let (n1, node1) = make_node("N1", "scope-node", NodeType::Axiom, 0.9);
+    let (n2, node2) = make_node("N2", "causal-neighbor-summary", NodeType::Resolved, 0.9);
+    graph.layers.causal.nodes.insert(n1.clone(), node1);
+    graph.layers.causal.nodes.insert(n2, node2);
+    graph.layers.causal.edges.push(make_edge("N1", "N2", EdgeType::LeadsTo));
+
+    let output = graph.retrieve(&[n1], 1);
+    assert!(
+        output.contains("causal-neighbor-summary"),
+        "causal edge neighbor must appear in retrieve output\n{}",
+        output
+    );
+}
+
+#[test]
+fn retrieve_follows_vias() {
+    let mut graph = SessionGraph::new("ret-vias");
+    let (n1, node1) = make_node("N1", "scope-node", NodeType::Axiom, 0.9);
+    // S1 in semantic layer; epistemic_state < 0.8 so it shows in EPISTEMIC section
+    let (s1, node_s1) = make_node("S1", "strong-via-target-summary", NodeType::Supporting, 0.5);
+    graph.layers.causal.nodes.insert(n1.clone(), node1);
+    graph.layers.semantic.nodes.insert(s1, node_s1);
+    graph.vias.push(make_via("N1", "S1", 0.8)); // strength > 0.5 → followed
+
+    let output = graph.retrieve(&[n1], 1);
+    assert!(
+        output.contains("strong-via-target-summary"),
+        "via target (strength 0.8 > 0.5) must appear in retrieve output\n{}",
+        output
+    );
+}
+
+#[test]
+fn retrieve_omits_weak_vias() {
+    let mut graph = SessionGraph::new("ret-weak-vias");
+    let (n1, node1) = make_node("N1", "scope-node", NodeType::Axiom, 0.9);
+    let (s2, node_s2) = make_node("S2", "weak-via-target-summary", NodeType::Supporting, 0.5);
+    graph.layers.causal.nodes.insert(n1.clone(), node1);
+    graph.layers.semantic.nodes.insert(s2, node_s2);
+    // strength 0.2 — below both traversal threshold (0.5) and serialize threshold (0.3)
+    graph.vias.push(make_via("N1", "S2", 0.2));
+
+    let output = graph.retrieve(&[n1], 1);
+    assert!(
+        !output.contains("weak-via-target-summary"),
+        "weak via target (strength 0.2) must NOT appear in retrieve output\n{}",
+        output
+    );
+}
+
+#[test]
+fn retrieve_output_is_subset_of_full() {
+    let mut graph = SessionGraph::new("ret-subset");
+    let (n1, node1) = make_node("N1", "scope-node-only", NodeType::Axiom, 0.9);
+    graph.layers.causal.nodes.insert(n1.clone(), node1);
+
+    // Extra disconnected nodes — present in full, absent from retrieve
+    for i in 2..=5 {
+        let id = NodeId(format!("N{}", i));
+        let node = Node {
+            id: id.clone(),
+            summary: format!("disconnected-node-{}", i),
+            node_type: NodeType::Resolved,
+            activation_weight: 0.5,
+            epistemic_state: 0.9,
+            farga_ref: None,
+        };
+        graph.layers.causal.nodes.insert(id, node);
+    }
+
+    let full = graph.serialize();
+    let retrieved = graph.retrieve(&[n1], 1);
+    assert!(
+        retrieved.len() < full.len(),
+        "retrieve output ({} chars) must be shorter than full serialize ({} chars)\nRetrieved:\n{}\nFull:\n{}",
+        retrieved.len(),
+        full.len(),
+        retrieved,
+        full
     );
 }

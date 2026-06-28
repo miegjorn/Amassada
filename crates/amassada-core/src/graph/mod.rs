@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -289,6 +289,194 @@ impl SessionGraph {
         // ── VIAS section (active: strength >= 0.3) ───────────────────────────
         let mut active_vias: Vec<&Via> =
             self.vias.iter().filter(|v| v.strength >= 0.3).collect();
+        active_vias.sort_by(|a, b| a.from_node.0.cmp(&b.from_node.0));
+
+        if !active_vias.is_empty() {
+            out.push('\n');
+            out.push_str("VIAS (active)\n");
+            for via in active_vias {
+                out.push_str(&format!(
+                    "{} → {}   {}  {:.2}\n",
+                    via.from_node, via.to_node, via.via_type, via.strength
+                ));
+            }
+        }
+
+        out
+    }
+
+    /// Return a serialized subset of the graph rooted at `scope`.
+    ///
+    /// Traversal rules:
+    /// - Scope nodes always included.
+    /// - Causal-layer `LeadsTo` / `Supports` edges from scope nodes: include
+    ///   the `to` node (1 hop).
+    /// - Vias with `strength > 0.5` from scope nodes: include via-target node.
+    /// - If `via_hops == 2`, follow one additional hop of vias (strength > 0.5)
+    ///   from the first-hop via targets.
+    ///
+    /// Output format is identical to `serialize()` except:
+    /// - Only retrieved nodes appear in CAUSAL / EPISTEMIC sections.
+    /// - EPISTEMIC threshold is `epistemic_state < 0.8` (stricter than full).
+    /// - VIAS includes only vias where at least one endpoint is retrieved.
+    pub fn retrieve(&self, scope: &[NodeId], via_hops: u8) -> String {
+        let mut retrieved: HashSet<NodeId> = HashSet::new();
+
+        // ── 1. Seed with scope nodes ─────────────────────────────────────────
+        for id in scope {
+            retrieved.insert(id.clone());
+        }
+
+        // ── 2. Causal-layer 1-hop edges from scope nodes ─────────────────────
+        let scope_set: HashSet<NodeId> = scope.iter().cloned().collect();
+        for edge in &self.layers.causal.edges {
+            if scope_set.contains(&edge.from)
+                && matches!(edge.edge_type, EdgeType::LeadsTo | EdgeType::Supports)
+            {
+                retrieved.insert(edge.to.clone());
+            }
+        }
+
+        // ── 3. Vias with strength > 0.5 from scope nodes ─────────────────────
+        let mut via_targets: HashSet<NodeId> = HashSet::new();
+        for via in &self.vias {
+            if via.strength > 0.5 && scope_set.contains(&via.from_node) {
+                via_targets.insert(via.to_node.clone());
+                retrieved.insert(via.to_node.clone());
+            }
+        }
+
+        // ── 4. Optional second hop from via targets ───────────────────────────
+        if via_hops == 2 {
+            for via in &self.vias {
+                if via.strength > 0.5 && via_targets.contains(&via.from_node) {
+                    retrieved.insert(via.to_node.clone());
+                }
+            }
+        }
+
+        self.serialize_subset(&retrieved)
+    }
+
+    /// Serialize only the nodes present in `ids`.
+    ///
+    /// Same `SESSION_CONTEXT v0.1` format as `serialize()`, but:
+    /// - CAUSAL section: only retrieved causal-layer nodes.
+    /// - EPISTEMIC section: only retrieved nodes with `epistemic_state < 0.8`.
+    /// - VIAS section: only active vias (`strength >= 0.3`) where at least one
+    ///   endpoint is in `ids`.
+    fn serialize_subset(&self, ids: &HashSet<NodeId>) -> String {
+        let mut out = String::new();
+
+        // ── header ───────────────────────────────────────────────────────────
+        let total_nodes = self.layers.all_nodes().filter(|n| ids.contains(&n.id)).count();
+
+        let mut frontier_ids: Vec<&NodeId> = self
+            .layers
+            .all_nodes()
+            .filter(|n| ids.contains(&n.id) && n.node_type == NodeType::Frontier)
+            .map(|n| &n.id)
+            .collect();
+        frontier_ids.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let mut unresolved_ids: Vec<&NodeId> = self
+            .layers
+            .all_nodes()
+            .filter(|n| ids.contains(&n.id) && n.node_type == NodeType::Question)
+            .map(|n| &n.id)
+            .collect();
+        unresolved_ids.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let frontier_str = if frontier_ids.is_empty() {
+            "[]".to_string()
+        } else {
+            format!(
+                "[{}]",
+                frontier_ids
+                    .iter()
+                    .map(|id| id.0.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+
+        let unresolved_str = if unresolved_ids.is_empty() {
+            "[]".to_string()
+        } else {
+            format!(
+                "[{}]",
+                unresolved_ids
+                    .iter()
+                    .map(|id| id.0.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+
+        out.push_str("SESSION_CONTEXT v0.1\n");
+        out.push_str(&format!(
+            "session: {}  round: {}  nodes: {}\n",
+            self.session_id, self.version, total_nodes
+        ));
+        out.push_str(&format!(
+            "frontier: {}  unresolved: {}\n",
+            frontier_str, unresolved_str
+        ));
+
+        // ── CAUSAL section (retrieved causal nodes only) ──────────────────────
+        let mut causal_nodes: Vec<&Node> = self
+            .layers
+            .causal
+            .nodes
+            .values()
+            .filter(|n| ids.contains(&n.id))
+            .collect();
+        causal_nodes.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+
+        if !causal_nodes.is_empty() {
+            out.push('\n');
+            out.push_str("CAUSAL\n");
+            out.push_str("id        type          aw    ep    summary\n");
+            for node in causal_nodes {
+                out.push_str(&format!(
+                    "{:<10}  {:<12}  {:.2}  {:.2}  \"{}\"\n",
+                    node.id,
+                    node.node_type,
+                    node.activation_weight,
+                    node.epistemic_state,
+                    node.summary
+                ));
+            }
+        }
+
+        // ── EPISTEMIC section (retrieved, epistemic_state < 0.8) ─────────────
+        let mut open_nodes: Vec<&Node> = self
+            .layers
+            .all_nodes()
+            .filter(|n| ids.contains(&n.id) && n.epistemic_state < 0.8)
+            .collect();
+        open_nodes.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+
+        if !open_nodes.is_empty() {
+            out.push('\n');
+            out.push_str("EPISTEMIC (open nodes only)\n");
+            for node in open_nodes {
+                out.push_str(&format!(
+                    "{:<10}  {:.2}  \"{}\"\n",
+                    node.id, node.epistemic_state, node.summary
+                ));
+            }
+        }
+
+        // ── VIAS section (active, at least one endpoint retrieved) ───────────
+        let mut active_vias: Vec<&Via> = self
+            .vias
+            .iter()
+            .filter(|v| {
+                v.strength >= 0.3
+                    && (ids.contains(&v.from_node) || ids.contains(&v.to_node))
+            })
+            .collect();
         active_vias.sort_by(|a, b| a.from_node.0.cmp(&b.from_node.0));
 
         if !active_vias.is_empty() {
