@@ -556,3 +556,75 @@ impl SessionGraph {
         out
     }
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::graph::extractor::GraphDelta;
+
+    /// Serialize a populated `SessionGraph` to JSON, deserialize it back, and
+    /// verify structural equality.  No live HTTP calls — pure serde roundtrip.
+    #[test]
+    fn session_graph_roundtrips_serde() {
+        let mut graph = SessionGraph::new("test-session-42");
+
+        // Add a couple of nodes via a delta so we exercise the full path.
+        let delta = GraphDelta {
+            new_nodes: vec![
+                Node {
+                    id: NodeId("n1".into()),
+                    summary: "first node".into(),
+                    node_type: NodeType::Axiom,
+                    activation_weight: 0.8,
+                    epistemic_state: 0.9,
+                    farga_ref: None,
+                },
+                Node {
+                    id: NodeId("n2".into()),
+                    summary: "frontier node".into(),
+                    node_type: NodeType::Frontier,
+                    activation_weight: 0.5,
+                    epistemic_state: 0.4,
+                    farga_ref: Some("farga://nodes/n2".into()),
+                },
+            ],
+            new_edges: vec![Edge {
+                from: NodeId("n1".into()),
+                to: NodeId("n2".into()),
+                edge_type: EdgeType::LeadsTo,
+                weight: 1.0,
+            }],
+            new_vias: vec![],
+            updates: vec![],
+        };
+        graph.apply_delta(delta);
+
+        // Serialize to JSON
+        let json = serde_json::to_string(&graph).expect("serialize should succeed");
+
+        // Deserialize back
+        let restored: SessionGraph =
+            serde_json::from_str(&json).expect("deserialize should succeed");
+
+        // Structural checks
+        assert_eq!(restored.session_id, "test-session-42");
+        assert_eq!(restored.version, graph.version);
+        assert_eq!(
+            restored.layers.causal.nodes.len(),
+            graph.layers.causal.nodes.len()
+        );
+        assert_eq!(restored.layers.causal.edges.len(), 1);
+
+        // Spot-check a node
+        let n2 = restored
+            .layers
+            .causal
+            .nodes
+            .get(&NodeId("n2".into()))
+            .expect("n2 should survive roundtrip");
+        assert_eq!(n2.node_type, NodeType::Frontier);
+        assert_eq!(n2.farga_ref.as_deref(), Some("farga://nodes/n2"));
+    }
+}

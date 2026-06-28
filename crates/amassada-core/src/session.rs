@@ -7,6 +7,7 @@ use crate::canvas::Canvas;
 use crate::channels::whisper::WhisperQueue;
 use crate::context::ContextBuilder;
 use crate::error::Result;
+use crate::farga;
 use crate::graph::{extract_delta, GraphDelta, NodeId, NodeType, NodeUpdate, SessionGraph};
 use crate::round::RoundRunner;
 use crate::synthesis::synthesize_artifacts;
@@ -20,9 +21,13 @@ pub struct SessionEngine {
     pub graph: SessionGraph,
     transport: Arc<dyn Transport>,
     canvas_library: HashMap<String, Canvas>,
+    farga_base_url: Option<String>,
 }
 
 impl SessionEngine {
+    /// Create a new session with a fresh `SessionGraph`.
+    /// If `farga_base_url` is `Some`, the graph is persisted to Farga at
+    /// session end.
     pub fn new(canvas: Canvas, goal: String, transport: Arc<dyn Transport>) -> Self {
         let session_id = Uuid::new_v4().to_string();
         let graph = SessionGraph::new(&session_id);
@@ -33,6 +38,49 @@ impl SessionEngine {
             graph,
             transport,
             canvas_library: HashMap::new(),
+            farga_base_url: None,
+        }
+    }
+
+    /// Attach a Farga base URL.  When set, the graph is loaded at session
+    /// start (if a prior run exists) and saved at session end.  Call before
+    /// `run()`.
+    pub fn with_farga(mut self, base_url: impl Into<String>) -> Self {
+        self.farga_base_url = Some(base_url.into());
+        self
+    }
+
+    /// Load an existing session from Farga (for continuing sessions).
+    ///
+    /// If Farga is unreachable or the session has no prior graph, falls back
+    /// to a fresh `SessionGraph`.  Always non-fatal.
+    pub async fn load(
+        session_id: impl Into<String>,
+        canvas: Canvas,
+        goal: String,
+        transport: Arc<dyn Transport>,
+        farga_base_url: impl Into<String>,
+    ) -> Self {
+        let session_id = session_id.into();
+        let farga_base_url = farga_base_url.into();
+        let graph = farga::load_graph(&farga_base_url, &session_id)
+            .await
+            .unwrap_or_else(|| {
+                tracing::warn!(
+                    "farga: no graph found for session {}, starting fresh",
+                    session_id
+                );
+                SessionGraph::new(&session_id)
+            });
+
+        Self {
+            session_id,
+            canvas,
+            goal,
+            graph,
+            transport,
+            canvas_library: HashMap::new(),
+            farga_base_url: Some(farga_base_url),
         }
     }
 
@@ -208,6 +256,13 @@ impl SessionEngine {
         };
 
         self.transport.emit_output(&output).await?;
+
+        // ── Farga persistence ─────────────────────────────────────────────────
+        // Non-fatal: errors are logged inside save_graph; session output is
+        // returned regardless.
+        if let Some(ref base_url) = self.farga_base_url {
+            farga::save_graph(base_url, &self.session_id, &self.graph).await;
+        }
 
         let _ = state; // state variable used for AwaitingApproval tracking
         Ok(output)
