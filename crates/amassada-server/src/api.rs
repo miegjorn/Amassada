@@ -2,6 +2,7 @@ use axum::{extract::{Path, State}, http::StatusCode, Json};
 use amassada_core::types::{SessionState, SessionEvent};
 use amassada_core::canvas::CanvasLibrary;
 use amassada_core::dispatch::{self, TurnRequest, build_system_prompt};
+use amassada_core::project_registry::ProjectRegistry;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -19,6 +20,7 @@ pub struct ServerState {
     pub farga_url: Option<String>,
     /// Root of the Fondament checkout used to resolve participant domain context.
     pub fondament_path: String,
+    pub project_registry: Arc<ProjectRegistry>,
 }
 
 pub struct SessionHandle {
