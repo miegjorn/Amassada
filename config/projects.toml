@@ -1,0 +1,36 @@
+# Amassada project registry
+# ──────────────────────────────────────────────────────────────────────────────
+# Maps project agents onto Matrix rooms and Fondament personas, enabling a single
+# Amassada instance to run N project sessions in parallel (multi-tenant runtime).
+#
+# Loaded once at startup from the path in $AMASSADA_PROJECTS_PATH
+# (default: config/projects.toml). Add a project by editing this file and
+# restarting Amassada. An empty file is valid — the instance starts with no
+# projects registered and falls back to the canvas participant's `domain` field
+# for org / single-tenant dispatch.
+#
+# Each project is a [[projects]] table:
+#
+#   id                — stable project identifier (used for `get_by_id` lookups
+#                       and as the session key).
+#   fondament_persona — Fondament persona id to resolve for this project's agent,
+#                       e.g. "fondament/projects/example-agent". Resolved against
+#                       $FONDAMENT_PATH/definitions/.
+#   matrix_rooms      — Matrix room ids this project answers in. An incoming
+#                       message's room_id is reverse-looked-up to this project.
+#   farga_project     — Farga project this agent reads/writes its SessionGraph to.
+#   mcp_scopes        — optional. Declared MCP tool scopes, propagated verbatim
+#                       into every dispatched turn so the receiving agent pod can
+#                       restrict itself to the declared tool set. Convention:
+#                       "farga:read", "farga:write:<project>". Absent = no scope
+#                       restriction declared (use only for org-level agents like
+#                       Guilhem).
+#
+# Example (uncomment and adapt — replace the room id with the real Matrix room):
+#
+# [[projects]]
+# id = "example-agent"
+# fondament_persona = "fondament/projects/example-agent"
+# matrix_rooms = ["!exampleRoomId:occitane.guilhem"]
+# farga_project = "example-agent"
+# mcp_scopes = ["farga:read", "farga:write:example-agent"]

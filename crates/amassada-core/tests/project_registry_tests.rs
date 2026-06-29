@@ -99,3 +99,21 @@ fn load_from_file_roundtrips() {
     assert!(reg.get_by_id("alpha").is_some());
     assert!(reg.get_by_id("beta").is_some());
 }
+
+// ── shipped example file ────────────────────────────────────────────────────
+
+/// The repo ships `config/projects.toml` as the default registry path
+/// (`AMASSADA_PROJECTS_PATH` defaults to `config/projects.toml`). It must parse
+/// cleanly so a fresh checkout boots with a valid — if empty — registry.
+#[test]
+fn shipped_example_config_parses() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../config/projects.toml");
+    assert!(path.exists(), "config/projects.toml must ship in the repo at {}", path.display());
+    let reg = ProjectRegistry::load(&path)
+        .expect("shipped config/projects.toml must parse");
+    // The shipped file documents the format via comments and registers no live
+    // projects by default — a fresh instance starts empty.
+    assert!(reg.get_by_id("example-agent").is_none(),
+        "shipped example must start with no live projects registered");
+}
