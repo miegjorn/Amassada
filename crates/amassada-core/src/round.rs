@@ -71,11 +71,11 @@ impl<'a> RoundRunner<'a> {
             };
 
             let whispers = self.whisper_queue.drain(agent_id);
-            let context = self.context_builder.build_for(
-                agent_id,
-                whispers,
-                None, // moderator envelope built separately for moderator
-            );
+            let context = if participant.context_seal {
+                self.context_builder.build_for_sealed(agent_id, whispers)
+            } else {
+                self.context_builder.build_for(agent_id, whispers, None)
+            };
             let system_prompt = if participant.is_deconstructive {
                 use fondament_core::resolver::build_deconstructive_preamble;
                 use fondament_core::types::{ComposedPart, PartKind};
@@ -119,7 +119,9 @@ impl<'a> RoundRunner<'a> {
                 max_tokens: MAX_TOKENS_PER_TURN,
                 thinking_budget: participant.thinking_budget,
                 api_key: None,
-                shared_context: shared_context.clone(),
+                // Sealed participants must not receive graph context — their only input
+                // comes through explicitly injected moderator whispers.
+                shared_context: if participant.context_seal { None } else { shared_context.clone() },
                 mcp_scopes: vec![],
             };
             prepared.push(PreparedItem { agent_id: agent_id.clone(), participant, req });
@@ -371,6 +373,7 @@ mod tests {
                 thinking_budget: None,
                 is_deconstructive: false,
                 endpoint: None,
+                context_seal: false,
                 collected_parts: vec![],
             },
         ];

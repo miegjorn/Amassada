@@ -1,0 +1,52 @@
+id: meditation
+version: "1.0.0"
+mode: auto
+selector:
+  description: "Structured self-correction: extract component rationale, sealed axiomatic evaluation, synthesize optimization proposals"
+  tags: [meditation, self-correction, axiom-evaluation, optimization, weekly, reflection]
+  examples:
+    - "meditate on gardian"
+    - "weekly meditation for farga"
+    - "self-correction session for the dispatcher"
+    - "axiomatic review of amassada"
+initial_participants:
+  - persona: moderator
+    domain: fondament/meditation-moderator
+    thinking_budget: 4000
+  - persona: analyst
+    domain: fondament/senior-engineer
+  - persona: evaluator
+    domain: fondament/axiom-evaluator
+    context_seal: true
+    thinking_budget: 8000
+budget:
+  total_tokens: 120000
+  pools:
+    main_session: 100000
+    consultations: 12000
+    mod_whisper: 8000
+consultation:
+  max_turns: 1
+  min_response_tokens: 30
+rounds:
+  min: 5
+  max: 10
+  convergence_modifier: 0.85
+  context_window: 20
+human:
+  slot: false
+output:
+  format: markdown
+  sections:
+    - id: rationale-summary
+      title: "Extracted Design Rationale"
+      required: true
+    - id: axiomatic-findings
+      title: "Axiomatic Evaluation Findings"
+      required: true
+    - id: optimization-proposals
+      title: "Optimization Proposals"
+      required: true
+    - id: risk-classification
+      title: "Risk Classification"
+      required: false

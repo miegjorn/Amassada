@@ -4,10 +4,12 @@ use amassada_core::canvas::CanvasLibrary;
 use amassada_core::dispatch::{self, TurnRequest, build_system_prompt};
 use amassada_core::project_registry::ProjectRegistry;
 use amassada_core::fondament::resolve_persona;
+use amassada_core::session::SessionEngine;
+use amassada_core::transport::local::LocalTransport;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 
 /// Default canvas used for the ongoing org-level conversation with Guilhem.
 const ORG_SESSION_CANVAS: &str = "org-session";
@@ -243,6 +245,131 @@ fn error_response(session_id: &str, status: StatusCode, msg: String) -> (StatusC
     tracing::warn!("post_message error ({}): {}", session_id, msg);
     (status, Json(MessageResponse { text: msg, session_id: session_id.to_string() }))
 }
+
+// ─── Meditation trigger ───────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct MeditateRequest {
+    pub components: Vec<String>,
+    #[serde(default = "default_farga_project")]
+    pub farga_project: String,
+}
+
+fn default_farga_project() -> String { "occitan".to_string() }
+
+#[derive(Serialize)]
+pub struct MeditateSession {
+    pub component: String,
+    pub session_id: String,
+}
+
+#[derive(Serialize)]
+pub struct MeditateResponse {
+    pub sessions: Vec<MeditateSession>,
+}
+
+/// Fire a meditation session for each listed component.
+/// Sessions run asynchronously in background; their synthesis artifacts are written
+/// to Farga on completion. Returns immediately with session IDs.
+pub async fn trigger_meditate(
+    State(s): State<ServerState>,
+    Json(req): Json<MeditateRequest>,
+) -> (StatusCode, Json<MeditateResponse>) {
+    let library = match CanvasLibrary::from_stdlib_dir(std::path::PathBuf::from(&s.canvas_dir)) {
+        Ok(lib) => lib,
+        Err(e) => {
+            tracing::error!("meditation: canvas library load failed: {}", e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(MeditateResponse { sessions: vec![] }));
+        }
+    };
+
+    let canvas = match library.get("meditation") {
+        Some(c) => c.clone(),
+        None => {
+            tracing::error!("meditation: 'meditation' canvas not found in {}", s.canvas_dir);
+            return (StatusCode::NOT_FOUND, Json(MeditateResponse { sessions: vec![] }));
+        }
+    };
+
+    let farga_url = s.farga_url.clone();
+    let fondament_path = s.fondament_path.clone();
+    let mut sessions = Vec::new();
+
+    for component in req.components {
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let canvas = canvas.clone();
+        let farga_url = farga_url.clone();
+        let fondament_path = fondament_path.clone();
+        let farga_project = req.farga_project.clone();
+        let component_clone = component.clone();
+        let sid = session_id.clone();
+
+        sessions.push(MeditateSession {
+            component: component.clone(),
+            session_id: session_id.clone(),
+        });
+
+        tokio::spawn(async move {
+            let goal = format!(
+                "Meditation on component '{}' (project '{}'). \
+                Extract design rationale from available Farga context and session graph, \
+                evaluate consistency against foundational axioms in sealed context, \
+                synthesize optimization proposals with risk classification.",
+                component_clone, farga_project
+            );
+
+            let (_, rx) = mpsc::channel(1);
+            let transport = Arc::new(LocalTransport::new(rx));
+
+            let engine_builder = SessionEngine::new(canvas, goal, transport)
+                .with_fondament(fondament_path);
+            let mut engine = if let Some(ref url) = farga_url {
+                engine_builder.with_farga(url.clone())
+            } else {
+                engine_builder
+            };
+
+            match engine.run().await {
+                Ok(output) => {
+                    tracing::info!(
+                        "meditation {} ({}) complete: {} artifacts",
+                        sid, component_clone, output.artifacts.len()
+                    );
+                    if let Some(ref url) = farga_url {
+                        let client = reqwest::Client::new();
+                        for art in &output.artifacts {
+                            let signal_url = format!("{}/signals", url);
+                            let payload = serde_json::json!({
+                                "project": farga_project,
+                                "signals": [{
+                                    "project": farga_project,
+                                    "content": format!(
+                                        "[meditation/{}/{}]\n{}",
+                                        component_clone, art.id, art.content
+                                    ),
+                                    "source": "meditation"
+                                }]
+                            });
+                            if let Err(e) = client.post(&signal_url).json(&payload).send().await {
+                                tracing::warn!(
+                                    "meditation {}: failed to write artifact '{}' to Farga: {}",
+                                    sid, art.id, e
+                                );
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("meditation {} ({}) failed: {}", sid, component_clone, e);
+                }
+            }
+        });
+    }
+
+    (StatusCode::ACCEPTED, Json(MeditateResponse { sessions }))
+}
+
+// ─── Fondament resolution ─────────────────────────────────────────────────────
 
 /// Best-effort resolution of a participant's domain context from the Fondament
 /// checkout. The `domain` is a path-like id (e.g. "fondament/guilhem"); we try a

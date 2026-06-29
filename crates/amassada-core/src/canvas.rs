@@ -44,6 +44,12 @@ pub struct ParticipantDef {
     /// The endpoint must implement POST /turn accepting TurnHttpRequest, returning TurnHttpResponse.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
+    /// When true, this participant operates in sealed context: they see only moderator whispers,
+    /// never the session transcript or shared graph context. Used for axiomatic evaluation phases
+    /// where the evaluator must work from an explicitly injected rationale, not from accumulated
+    /// session history. See ContextBuilder::build_for_sealed.
+    #[serde(default)]
+    pub context_seal: bool,
 }
 
 impl ParticipantDef {
@@ -51,6 +57,7 @@ impl ParticipantDef {
     pub fn is_human(&self) -> bool { self.persona == "human" }
     pub fn is_deconstructive(&self) -> bool { self.modifiers.iter().any(|m| m == "deconstructive") }
     pub fn has_endpoint(&self) -> bool { self.endpoint.is_some() }
+    pub fn is_sealed(&self) -> bool { self.context_seal }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

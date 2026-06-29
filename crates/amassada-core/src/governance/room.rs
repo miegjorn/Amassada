@@ -18,6 +18,7 @@ pub fn address_to_participant(addr: &str) -> ParticipantDef {
         thinking_budget: None,
         modifiers: vec![],
         endpoint: None,
+        context_seal: false,
     }
 }
 

@@ -47,5 +47,26 @@ impl ContextBuilder {
         parts.join("\n")
     }
 
+    /// Build context for a sealed participant: only moderator whispers are included.
+    /// No transcript, no moderator envelope, no shared graph context. Used for axiomatic
+    /// evaluation phases where the evaluator must work from explicitly injected rationale only.
+    pub fn build_for_sealed(
+        &self,
+        _agent: &AgentId,
+        whispers: Vec<WhisperMsg>,
+    ) -> String {
+        if whispers.is_empty() {
+            return "=== Sealed Context ===\nNo axiom document has been injected yet. \
+                Respond with [MAIN]Awaiting axiom injection.[/MAIN]".to_string();
+        }
+        let mut parts = vec![
+            "=== Sealed Context (axioms only — no session transcript visible) ===".to_string()
+        ];
+        for w in &whispers {
+            parts.push(format!("[axiom] {}", w.content));
+        }
+        parts.join("\n")
+    }
+
     pub fn len(&self) -> usize { self.transcript.len() }
 }

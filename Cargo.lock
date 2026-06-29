@@ -30,6 +30,7 @@ dependencies = [
  "amassada-core",
  "anyhow",
  "axum",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",

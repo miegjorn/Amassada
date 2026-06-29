@@ -115,6 +115,10 @@ pub struct ActiveParticipant {
     /// `ParticipantDef::endpoint`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
+    /// When true, context is built via ContextBuilder::build_for_sealed: only moderator
+    /// whispers are visible, no session transcript, no shared graph context.
+    #[serde(default)]
+    pub context_seal: bool,
     #[serde(skip)]
     pub collected_parts: Vec<fondament_core::types::ComposedPart>,
 }

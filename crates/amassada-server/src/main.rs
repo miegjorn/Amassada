@@ -49,6 +49,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/state", get(api::get_state))
         .route("/human_input", post(api::post_human_input))
         .route("/events", post(api::publish_event))
+        .route("/trigger/meditate", post(api::trigger_meditate))
         .route("/ws", get(ws::ws_handler))
         .with_state(state);
 

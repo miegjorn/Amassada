@@ -22,6 +22,9 @@ pub struct SessionEngine {
     transport: Arc<dyn Transport>,
     canvas_library: HashMap<String, Canvas>,
     farga_base_url: Option<String>,
+    /// Path to the Fondament repo root. When set, participant domain strings are
+    /// resolved via fondament::resolve_persona before building system prompts.
+    fondament_path: Option<String>,
 }
 
 impl SessionEngine {
@@ -39,7 +42,13 @@ impl SessionEngine {
             transport,
             canvas_library: HashMap::new(),
             farga_base_url: None,
+            fondament_path: None,
         }
+    }
+
+    pub fn with_fondament(mut self, path: impl Into<String>) -> Self {
+        self.fondament_path = Some(path.into());
+        self
     }
 
     /// Attach a Farga base URL.  When set, the graph is loaded at session
@@ -81,12 +90,27 @@ impl SessionEngine {
             transport,
             canvas_library: HashMap::new(),
             farga_base_url: Some(farga_base_url),
+            fondament_path: None,
         }
     }
 
     pub fn with_canvas_library(mut self, library: HashMap<String, Canvas>) -> Self {
         self.canvas_library = library;
         self
+    }
+
+    /// Resolve a participant's domain string to actual Fondament context + composition parts.
+    /// Falls back to the raw domain string when fondament_path is unset or resolution fails.
+    fn resolve_participant_domain(&self, domain: &str)
+        -> (String, Vec<fondament_core::types::ComposedPart>)
+    {
+        if let Some(ref fp) = self.fondament_path {
+            match crate::fondament::resolve_persona(fp, domain) {
+                Ok(resolved) => return (resolved.context, resolved.collected_parts),
+                Err(e) => tracing::debug!("fondament domain '{}' not resolved ({}), using raw string", domain, e),
+            }
+        }
+        (domain.to_string(), vec![])
     }
 
     pub async fn run(&mut self) -> Result<SessionOutput> {
@@ -98,20 +122,25 @@ impl SessionEngine {
             goal: self.goal.clone(),
         }).await?;
 
-        // Assemble participants from canvas definitions
+        // Assemble participants from canvas definitions, resolving Fondament domain context
+        // when fondament_path is set so inline (non-endpoint) participants get real personas.
         let mut participants: Vec<ActiveParticipant> = active_canvas.initial_participants.iter()
             .enumerate()
-            .map(|(i, def)| ActiveParticipant {
-                agent_id: AgentId::new(&format!("{}-{}", def.persona, i)),
-                persona: def.persona.clone(),
-                domain: def.domain.clone(),
-                turns_taken: 0,
-                is_moderator: def.is_moderator(),
-                model: def.model.clone(),
-                thinking_budget: def.thinking_budget,
-                is_deconstructive: def.is_deconstructive(),
-                endpoint: def.endpoint.clone(),
-                collected_parts: vec![],
+            .map(|(i, def)| {
+                let (domain, collected_parts) = self.resolve_participant_domain(&def.domain);
+                ActiveParticipant {
+                    agent_id: AgentId::new(&format!("{}-{}", def.persona, i)),
+                    persona: def.persona.clone(),
+                    domain,
+                    turns_taken: 0,
+                    is_moderator: def.is_moderator(),
+                    model: def.model.clone(),
+                    thinking_budget: def.thinking_budget,
+                    is_deconstructive: def.is_deconstructive(),
+                    endpoint: def.endpoint.clone(),
+                    context_seal: def.is_sealed(),
+                    collected_parts,
+                }
             })
             .collect();
 
@@ -194,20 +223,24 @@ impl SessionEngine {
             if let Some(new_canvas_id) = result.canvas_switch {
                 if let Some(new_canvas) = self.canvas_library.get(&new_canvas_id) {
                     active_canvas = new_canvas.clone();
-                    // Re-initialize participants from new canvas
+                    // Re-initialize participants from new canvas with domain resolution
                     participants = active_canvas.initial_participants.iter()
                         .enumerate()
-                        .map(|(i, def)| ActiveParticipant {
-                            agent_id: AgentId::new(&format!("{}-{}", def.persona, i)),
-                            persona: def.persona.clone(),
-                            domain: def.domain.clone(),
-                            turns_taken: 0,
-                            is_moderator: def.is_moderator(),
-                            model: def.model.clone(),
-                            thinking_budget: def.thinking_budget,
-                            is_deconstructive: def.is_deconstructive(),
-                            endpoint: def.endpoint.clone(),
-                            collected_parts: vec![],
+                        .map(|(i, def)| {
+                            let (domain, collected_parts) = self.resolve_participant_domain(&def.domain);
+                            ActiveParticipant {
+                                agent_id: AgentId::new(&format!("{}-{}", def.persona, i)),
+                                persona: def.persona.clone(),
+                                domain,
+                                turns_taken: 0,
+                                is_moderator: def.is_moderator(),
+                                model: def.model.clone(),
+                                thinking_budget: def.thinking_budget,
+                                is_deconstructive: def.is_deconstructive(),
+                                endpoint: def.endpoint.clone(),
+                                context_seal: def.is_sealed(),
+                                collected_parts,
+                            }
                         })
                         .collect();
                 } else {
