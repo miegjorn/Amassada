@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use crate::channels::consult::{ConsultRequest, ConsultResponse};
+use crate::dispatch::{self, TurnRequest};
 use crate::error::Result;
 use crate::transport::Transport;
 use crate::types::{AgentId, HumanInput, SessionEvent, SessionOutput, WhisperMsg};
@@ -40,11 +41,26 @@ impl Transport for LocalTransport {
         Ok(())
     }
 
+    /// Dispatch the consultation question to the target agent directly via
+    /// the Anthropic API and return the answer. The consultation is a single
+    /// synchronous turn — the answer arrives before the caller's next turn.
     async fn consult(&self, req: &ConsultRequest) -> Result<ConsultResponse> {
-        // LocalTransport doesn't dispatch real consultations — stub for CLI
+        let turn_req = TurnRequest {
+            system_prompt: req.system_prompt.clone(),
+            context: req.question.clone(),
+            model: req.model.clone(),
+            max_tokens: 1024,
+            structured_reasoning: None,
+            api_key: None,
+            shared_context: None,
+            mcp_scopes: vec![],
+        };
+        let resp = dispatch::dispatch(turn_req).await?;
         Ok(ConsultResponse {
             from: req.target.clone(),
-            content: "[consultation not available in local mode]".into(),
+            content: resp.text,
+            input_tokens: resp.input_tokens,
+            output_tokens: resp.output_tokens,
         })
     }
 
