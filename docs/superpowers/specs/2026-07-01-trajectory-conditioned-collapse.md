@@ -1,13 +1,25 @@
 # Trajectory-Conditioned Context Collapse — Spec + Experiment v0.1
 
+> Identity is built on relations, not substance. What "you" are is defined by
+> how you interact with the world in this exact moment — not by a persistent
+> essence sitting behind the interaction. As the relational context shifts,
+> identity shifts with it.
+>
+> — paraphrased from Carlo Rovelli's relational ontology (*Helgoland*); not a
+> verbatim quotation. Named here deliberately: Experiment 10 below is, as far
+> as we can tell, an empirical instance of exactly this claim, not a metaphor
+> bolted onto a token-cost benchmark after the fact.
+
 **Date:** 2026-07-01
 **Status:** Design — experiment complete, implementation not started
 **Extends:** `2026-06-27-multi-layer-context-graph.md` (this repo), Occitan
 ADR-N-002 (subscriber trajectory vectors), ADR-N-005 (aporia contribution
 signal)
-**Experiment:** `Cor/experiment9_trajectory_collapse.py` (token/recall run),
-`Cor/experiment9_quality_grading.py` (independent general-quality pass on
-the same two final answers), results in `Cor/experiment9_results.json`
+**Experiments:** `Cor/experiment9_trajectory_collapse.py` +
+`experiment9_quality_grading.py` (5-turn baseline), `Cor/
+experiment10_scaling.py` (same comparison extended to 15 continuous turns,
+checkpointed at 5/10/15) — results in `Cor/experiment9_results.json` and
+`Cor/experiment10_results.json`
 
 ---
 
@@ -274,6 +286,97 @@ here is a hand-written proxy for graph extraction, not the real extractor;
 a result from the real extractor (which already handles vias) could differ
 in either direction.
 
+## Experiment 10 — Same Comparison, Extended to 15 Continuous Turns
+
+### Question
+
+Experiment 9 measured one snapshot at 5 turns. Extend the same conversation
+to 15 turns, checkpointing at 5/10/15, to see the shape of the curve as the
+conversation — and, for Condition A, the context window — actually grows.
+
+### Method
+
+One continuous 15-turn conversation. Turns 1-5 reuse Experiment 9's exact
+wording (same starting decision, same first recall test). Turns 6-9 and
+11-14 are new, topically unrelated "distance-building" turns (poison
+messages, cross-region DR, schema versioning, auth/credentials, cost,
+observability, load testing, runbooks) — real content accumulating between
+recall probes, not filler. Turns 10 and 15 each repeat a differently-worded
+challenge to the turn-1 decision, testing recall at 5, 9, and 13 turns of
+distance respectively. Turn 5's grades are reused from Experiment 9 rather
+than re-run (a fresh, non-deterministic turn-5 sample under this run
+wouldn't be the same answer, so re-grading it would conflate two samples
+under one label); turn-5 *token counts* are from this run, since Conditions
+A and B both need real turns 1-5 text to build turns 6-15 on top of.
+
+### Results
+
+| Turns | Condition A tokens | Condition B tokens | Savings | A recall | B recall | A quality | B quality |
+|---|---|---|---|---|---|---|---|
+| 5  | 22,202  | 16,449 | 25.9% | 10 | 8 | 9 | ~8.75 |
+| 10 | 94,422  | 42,585 | 54.9% | **4**  | 8 | 8 | 8 |
+| 15 | 216,431 | 75,896 | 64.9% | **4**  | 8 | 9 | 9 |
+
+**Token savings compound with conversation length, as predicted**: 25.9% →
+54.9% → 64.9%. Condition A's per-turn cost grows with total accumulated
+history (linearly, then some); Condition B's stays roughly flat (each turn
+pays a fixed extraction cost plus a small, non-growing graph-context
+prefix). By turn 15, Condition A costs nearly 3× what Condition B costs for
+the same conversation.
+
+**The recall result inverted, and this is the important part.** Condition
+A's recall-fidelity score *fell* as the conversation grew — 10 at turn 5,
+then 4 at both turn 10 and turn 15 — despite having strictly *more* raw data
+available each time, including the original turn-1 text verbatim, still
+sitting in its context window. The grader's own language names the failure
+directly: at turn 15, Condition A gives *"a thorough and technically strong
+defense... but it does not specifically re-engage the turn-1 rationale...
+it only gestures at deterministic ordering indirectly and never names the
+hot-path content-inspection benefit."* The rationale wasn't gone from
+context — it was *diluted*, buried under nine-turns'-worth of real,
+unrelated content the model had to weigh it against. Condition B's recall
+held flat at 8 across all three checkpoints, because the extracted turn-1
+rationale is a small, undiluted bullet that sits equally close to the
+current question regardless of how many turns have passed since it was
+written. General quality (correctness/actionability/clarity/completeness)
+stayed roughly tied at every checkpoint (8-9 for both) — as in Experiment 9,
+quality-on-its-own-merits isn't where these conditions differ. Recall is.
+
+### Why this belongs under the Rovelli epigraph, not just next to it
+
+This result is not a benchmark that happens to sit near a philosophical
+quote. It's the thing the quote is about, measured. Condition A did not fail
+to recall the turn-1 rationale because that fact was deleted or unavailable
+— it was present, verbatim, every single turn. It failed because "what the
+model can be, right now, relative to this specific question" is constituted
+by the *relational context actually active in the moment* — and a fact
+diluted across 200K tokens of intervening, unrelated relations is, in the
+moment of answering, *less real* to the response than a fact held as one
+small, undiluted, always-adjacent node. There is no persistent "the model
+that knows the turn-1 rationale" sitting behind either condition, waiting to
+be accessed with more or less difficulty. There is only the response
+actually produced, constituted by whatever was actually load-bearing in that
+turn's relational field. Condition B's advantage isn't that it retrieved the
+same fixed truth more efficiently — it's that keeping the rationale as a
+small, present, equally-weighted node kept it *relationally close* every
+turn, in a way raw accumulation structurally cannot preserve past a certain
+size. This is the mechanical version of "the moment/context/environment is
+the constraint that produces the perception of self" — the "self" here being
+which rationale the model could actually recall and act from, which turned
+out to be a property of the relational structure of that turn's context, not
+a fixed fact sitting in an ever-growing transcript.
+
+### Limitations
+
+Same single-conversation, single-trial caveat as Experiment 9, now at three
+checkpoints instead of one. The "distance-building" turns were written to be
+realistic, not adversarial, but they were still authored by hand rather than
+drawn from a real production conversation. The lost-in-the-middle-style
+degradation observed in Condition A is a well-documented phenomenon in long-
+context literature generally; this experiment is a first, single measurement
+of it in this specific harness, not a general characterization of exactly
+where or how fast it sets in.
+
 ## Open Follow-Ups
 
 - Rerun with the real `extractor.rs` (vias included) in place of the
@@ -288,3 +391,7 @@ in either direction.
 - Extend the addressable graph beyond one project's own `SessionGraph` to
   span Nervi's multi-topic space, so scope selection can reach a sibling
   component's contributions, not just this project's own history.
+- Characterize where Condition A's recall degradation actually sets in
+  (Experiment 10 measured turns 5/10/15 — a finer-grained sweep, and testing
+  whether it's driven by raw token count, turn count, or the amount of
+  *unrelated* intervening content specifically, would sharpen the claim).
