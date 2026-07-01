@@ -98,7 +98,7 @@ What crosses the wire to Anthropic per agent per turn:
     },
     {
       "type": "text",
-      "text": "<agent persona + deconstructive preamble>",
+      "text": "<agent persona + aporia preamble>",
       "cache_control": {"type": "ephemeral"}
     }
   ],
@@ -236,7 +236,7 @@ pub struct ComposedPart {
 pub enum PartKind { Domain, Discipline, Stance, SessionNode }
 ```
 
-`build_deconstructive_preamble` takes `&[ComposedPart]`. At dispatch time, Amassada appends frontier session nodes (those with `activation_weight > 0.6` and `epistemic_state < 0.5`) to the agent's `collected_parts`. The deconstructive instruction then covers both identity decomposition and session state decomposition with one template.
+`build_aporia_preamble` takes `&[ComposedPart]`. At dispatch time, Amassada appends frontier session nodes (those with `activation_weight > 0.6` and `epistemic_state < 0.5`) to the agent's `collected_parts`. The aporia instruction then covers both identity decomposition and session state decomposition with one template.
 
 ---
 

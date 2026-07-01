@@ -23,7 +23,7 @@ budget:
 initial_participants:
   - persona: guilhem
     domain: fondament/guilhem
-    modifiers: [deconstructive]
+    modifiers: [aporia]
     endpoint: "http://guilhem.agents.svc.cluster.local:8080"
     thinking_budget: 8000
     description: |

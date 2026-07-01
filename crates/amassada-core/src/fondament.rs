@@ -6,7 +6,7 @@ pub struct ResolvedPersona {
     /// The `context` field of the Fondament definition — injected as domain context
     /// into the system prompt.
     pub context: String,
-    /// Composition parts for the deconstructive preamble. Contains at minimum one
+    /// Composition parts for the aporia preamble. Contains at minimum one
     /// Domain part keyed to the persona id; the extends chain contributes Discipline
     /// and Stance parts when present.
     pub collected_parts: Vec<ComposedPart>,
@@ -19,7 +19,7 @@ pub struct ResolvedPersona {
 /// `"fondament/guilhem"`, `"fondament/projects/my-project"`).
 ///
 /// Returns the persona's context string and the composition parts to use in the
-/// deconstructive preamble. Returns `Err(Config)` when the definitions tree cannot
+/// aporia preamble. Returns `Err(Config)` when the definitions tree cannot
 /// be loaded or the persona id is not found.
 ///
 /// ## Resolution fallback chain (two-tier)

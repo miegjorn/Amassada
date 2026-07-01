@@ -199,7 +199,7 @@ length.
 
 - **Haiku at the round boundary is the right extraction tier.** Claim 4
   was run on Haiku by design — the same per-round cost as noted in the
-  deconstructive experiments: roughly 1/14 of Sonnet at comparable
+  aporia experiments: roughly 1/14 of Sonnet at comparable
   structural extraction quality.
 
 - **The shared cache model is validated.** Claim 2 confirms the assumption

@@ -208,7 +208,7 @@ initial_participants:
 - `domain`: the context body drawn from Fondament (primitive) or Farga (project facet). Passed verbatim as `domain_context` in `build_system_prompt()`.
 - `model`: optional L2 model override (e.g. `claude-sonnet-4-6` or `grok-3`). Defaults to claude. For complementary runs (Anthropic + Grok/xAI in same session, different stances/participants), set `model: grok-*` + `endpoint: "..."` on the participant. Direct `dispatch` path remains exclusively for `claude*` / `anthropic*` models (guard in dispatch.rs). The Moderator can issue a further L3 override mid-session via `[MODEL: model-id for: agent-id]`. See Caissa entrypoint for grok task mode and MODEL env.
 - `authority: binding`: marks the human participant as authoritative; the engine never allows agent or Moderator actions to override confirmed human decisions.
-- `modifiers`: optional list of behavioural modifiers. Currently the only recognised value is `deconstructive`, which injects the SessionGraph frontier context into the system prompt preamble so the participant receives graph-state awareness before the main domain context.
+- `modifiers`: optional list of behavioural modifiers. Currently the only recognised value is `aporia`, which injects the SessionGraph frontier context into the system prompt preamble so the participant receives graph-state awareness before the main domain context.
 - `endpoint`: optional HTTP base URL for an external agent pod. When set, turns for this participant are dispatched via `POST {endpoint}/turn` (the `TurnHttpRequest` / `TurnHttpResponse` protocol) instead of calling Anthropic directly. Used for Guilhem and other Occitan agents that own their own MCP tool access.
 - `thinking_budget`: optional token budget for extended thinking (Anthropic `thinking` parameter). When set to a positive integer, the dispatch layer enables `interleaved-thinking-2025-05-14` and adds the budget to the API request. `max_tokens` is clamped upward to at least `thinking_budget + 1024`.
 
@@ -358,7 +358,7 @@ Governance deliberation on a proposed Fondament archetype or cross-project stand
 
 ### `org-session.yaml` — mode: auto
 
-Default canvas for Charradissa-routed Matrix conversations with the Guilhem org agent. Used when a room is registered under `[[agents.project]]` in `charradissa.toml` and no explicit canvas is specified. Single participant (Guilhem) with the deconstructive modifier enabled.
+Default canvas for Charradissa-routed Matrix conversations with the Guilhem org agent. Used when a room is registered under `[[agents.project]]` in `charradissa.toml` and no explicit canvas is specified. Single participant (Guilhem) with the aporia modifier enabled.
 
 ### `dream-session.yaml` — mode: auto (scheduled)
 
@@ -369,7 +369,7 @@ Three-phase protocol:
 2. **Synthesize** — identify cross-repo implications, architectural drift, pattern signals, and stack trajectory
 3. **Act** — create 3–8 GitHub issues for actionable improvement opportunities (dedup check before each); write a `source: dream` signal to Farga
 
-- Participants: `guilhem` (fondament/guilhem) with `deconstructive` modifier, `thinking_budget: 8000`
+- Participants: `guilhem` (fondament/guilhem) with `aporia` modifier, `thinking_budget: 8000`
 - Budget: 200,000 tokens, 1 round
 - Model: `claude-sonnet-4-6` (synthesis-grade; configurable via `dream.model` in guilhem Helm values)
 - Output: GitHub issues in appropriate repos + Farga dream signal

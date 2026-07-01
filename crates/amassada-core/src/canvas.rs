@@ -55,7 +55,7 @@ pub struct ParticipantDef {
 impl ParticipantDef {
     pub fn is_moderator(&self) -> bool { self.persona == "moderator" }
     pub fn is_human(&self) -> bool { self.persona == "human" }
-    pub fn is_deconstructive(&self) -> bool { self.modifiers.iter().any(|m| m == "deconstructive") }
+    pub fn is_aporia(&self) -> bool { self.modifiers.iter().any(|m| m == "aporia") }
     pub fn has_endpoint(&self) -> bool { self.endpoint.is_some() }
     pub fn is_sealed(&self) -> bool { self.context_seal }
 

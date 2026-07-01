@@ -110,7 +110,7 @@ pub struct ActiveParticipant {
     pub is_moderator: bool,
     pub model: Option<String>,
     pub structured_reasoning: Option<StructuredReasoning>,
-    pub is_deconstructive: bool,
+    pub is_aporia: bool,
     /// When set, this participant's turn is dispatched to an external agent endpoint
     /// (POST {endpoint}/turn) instead of calling Anthropic directly. Carried from
     /// `ParticipantDef::endpoint`.

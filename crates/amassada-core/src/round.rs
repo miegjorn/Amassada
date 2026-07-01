@@ -76,8 +76,8 @@ impl<'a> RoundRunner<'a> {
             } else {
                 self.context_builder.build_for(agent_id, whispers, None)
             };
-            let system_prompt = if participant.is_deconstructive {
-                use fondament_core::resolver::build_deconstructive_preamble;
+            let system_prompt = if participant.is_aporia {
+                use fondament_core::resolver::build_aporia_preamble;
                 use fondament_core::types::{ComposedPart, PartKind};
 
                 // Start with the participant's existing collected_parts (Domain, Discipline, Stance)
@@ -100,8 +100,8 @@ impl<'a> RoundRunner<'a> {
                     }
                 }
 
-                // Build deconstructive preamble, prepend to base system prompt
-                let preamble = build_deconstructive_preamble(&parts);
+                // Build aporia preamble, prepend to base system prompt
+                let preamble = build_aporia_preamble(&parts);
                 let base = build_system_prompt(&participant.persona, &participant.domain, participant.is_moderator);
                 format!("{}\n\n{}", preamble, base)
             } else {
@@ -371,7 +371,7 @@ mod tests {
                 turns_taken: 0,
                 model: None,
                 structured_reasoning: None,
-                is_deconstructive: false,
+                is_aporia: false,
                 endpoint: None,
                 context_seal: false,
                 collected_parts: vec![],
@@ -443,15 +443,15 @@ mod tests {
         assert_eq!(ctx.len(), 0, "context_builder must have 0 turns after empty round");
     }
 
-    /// Given a participant with `is_deconstructive: true` and a session graph
+    /// Given a participant with `is_aporia: true` and a session graph
     /// containing a frontier node (activation_weight > 0.6, epistemic_state < 0.5),
-    /// `build_deconstructive_preamble` with the augmented parts must produce a
+    /// `build_aporia_preamble` with the augmented parts must produce a
     /// string containing "session-node".
     #[test]
-    fn deconstructive_preamble_includes_frontier_nodes() {
+    fn aporia_preamble_includes_frontier_nodes() {
         use crate::graph::{GraphDelta as ExtractorDelta, Node, NodeId, NodeType};
         use crate::graph::extractor::GraphDelta;
-        use fondament_core::resolver::build_deconstructive_preamble;
+        use fondament_core::resolver::build_aporia_preamble;
         use fondament_core::types::{ComposedPart, PartKind};
 
         // Build a session graph with one frontier node
@@ -471,7 +471,7 @@ mod tests {
         };
         graph.apply_delta(delta);
 
-        // Simulate what RoundRunner does for a deconstructive participant
+        // Simulate what RoundRunner does for a aporia participant
         let collected_parts: Vec<ComposedPart> = vec![];
         let mut parts = collected_parts;
 
@@ -490,7 +490,7 @@ mod tests {
             }
         }
 
-        let preamble = build_deconstructive_preamble(&parts);
+        let preamble = build_aporia_preamble(&parts);
 
         assert!(
             preamble.contains("session-node"),

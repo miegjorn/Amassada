@@ -225,7 +225,7 @@ The extractor runs one Haiku API call per round boundary. It reads new transcrip
 
 - [ ] Replace `collected_parts: Vec<(String, String)>` with `Vec<ComposedPart>` in `resolve()`
 
-- [ ] Update `build_deconstructive_preamble` signature to `fn build_deconstructive_preamble(parts: &[ComposedPart]) -> String`
+- [ ] Update `build_aporia_preamble` signature to `fn build_aporia_preamble(parts: &[ComposedPart]) -> String`
 
 - [ ] Update preamble formatting to render `PartKind::SessionNode` with weight annotation:
   ```

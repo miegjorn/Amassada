@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Wire `thinking_budget` from `ResolvedAgent` into the Anthropic API call in `amassada-core/src/dispatch.rs` so that agents with the `+deconstructive` modifier actually receive extended thinking at dispatch time.
+**Goal:** Wire `thinking_budget` from `ResolvedAgent` into the Anthropic API call in `amassada-core/src/dispatch.rs` so that agents with the `+aporia` modifier actually receive extended thinking at dispatch time.
 
 **Architecture:** Add `thinking_budget: Option<u32>` to `TurnRequest`. When set, include `"thinking": {"type": "enabled", "budget_tokens": N}` in the request body and the required beta header. Fix response parsing to handle thinking blocks (content[0] may be a thinking block, not text).
 
@@ -299,7 +299,7 @@ Expected: 68 original + 3 new dispatch tests = 71 total, 0 failures.
 - [ ] **Step 7: Commit**
 
 ```bash
-cd /Users/bedardpl/project/Amassada && git add crates/amassada-core/src/dispatch.rs crates/amassada-core/tests/dispatch_tests.rs && git commit -m "feat: wire thinking_budget into dispatch — extended thinking support for deconstructive modifier"
+cd /Users/bedardpl/project/Amassada && git add crates/amassada-core/src/dispatch.rs crates/amassada-core/tests/dispatch_tests.rs && git commit -m "feat: wire thinking_budget into dispatch — extended thinking support for aporia modifier"
 ```
 
 ---

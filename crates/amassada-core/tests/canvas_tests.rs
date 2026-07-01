@@ -71,7 +71,7 @@ selector:
 initial_participants:
   - persona: guilhem
     domain: fondament/guilhem
-    modifiers: [deconstructive]
+    modifiers: [aporia]
     endpoint: "http://guilhem.agents.svc.cluster.local:8080"
   - persona: builder
     domain: fondament/senior-engineer

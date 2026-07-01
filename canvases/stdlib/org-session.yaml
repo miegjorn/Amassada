@@ -13,11 +13,11 @@ selector:
 initial_participants:
   - persona: guilhem
     domain: fondament/guilhem
-    # deconstructive: injects the SessionGraph frontier context into the system prompt
+    # aporia: injects the SessionGraph frontier context into the system prompt
     # preamble before the persona body — gives Guilhem awareness of the current graph
     # state (open decisions, frontier nodes, epistemic gaps) without polluting the main
     # user-turn context window.
-    modifiers: [deconstructive]
+    modifiers: [aporia]
     endpoint: "http://guilhem.agents.svc.cluster.local:8080"
 budget:
   total_tokens: 200000
