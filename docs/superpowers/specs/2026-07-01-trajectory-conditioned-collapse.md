@@ -1,0 +1,271 @@
+# Trajectory-Conditioned Context Collapse — Spec + Experiment v0.1
+
+**Date:** 2026-07-01
+**Status:** Design — experiment complete, implementation not started
+**Extends:** `2026-06-27-multi-layer-context-graph.md` (this repo), Occitan
+ADR-N-002 (subscriber trajectory vectors), ADR-N-005 (aporia contribution
+signal)
+**Experiment:** `Cor/experiment9_trajectory_collapse.py`, results in
+`Cor/experiment9_results.json`
+
+---
+
+## Problem Statement
+
+The mechanic this spec replaces is the one every LLM chat interface uses by
+default: Turn 1 sends `[msg1]`, Turn 2 sends `[msg1, resp1, msg2]`, Turn 3
+sends everything so far plus the new message. Context grows linearly with
+conversation length; nothing is ever dropped, resolved, or re-selected — only
+appended. This repo already broke from that model once, at project scope:
+`SessionGraph::retrieve(scope, via_hops)` sends a small, freshly-computed
+subset of a persistent graph each turn, not the raw transcript, and Claim 1
+of the multi-layer-context-graph experiment already measured that this wins
+on both axes at once (summaries-only scored **+3 higher** than
+summaries-plus-full-transcript, at **47% fewer input tokens**).
+
+This spec generalizes that break in three ways that came out of a design
+conversation spanning Fondament's aporia work, Nervi's ADR series, and
+Amassada's own graph model:
+
+1. **The graph being selected from should span more than one project's own
+   transcript-derived graph.** Nervi's contribution signals (ADR-N-005) mean
+   relevant context can live in a sibling component's topic, not just this
+   project's own history.
+2. **Selection should be triggered by what the reasoning process itself
+   discovers it's missing (a gap), not only by a pre-computed scope.**
+3. **The scope for the *next* collapse should be a function of the response
+   just produced — a trajectory, not a static "frontier" flag.**
+
+## Core Model
+
+### Identity as three terms, one of which is a function of the other two
+
+A useful compression that came out of the design conversation:
+
+```
+Identity(t) = ⟨Potential⟩ + ⟨Pointer⟩ + ⟨Response⟩
+```
+
+- **Potential** — everything recorded and not yet selected: Farga's graph,
+  Nervi's topic space across components. Not identity yet; the substrate
+  identity could draw from.
+- **Pointer** — a specific, situated selection into that potential, resolved
+  *now*, for this turn. Farga already has the right primitive for this:
+  `NodeKind::Reference` (`Farga/farga-core/src/types.rs`) is described as *"a
+  pointer to an external live source... JIT-resolved at agent runtime...
+  never copied in."* The collapse operation (`retrieve` + `serialize_subset`,
+  or aporia's recompose step) is what dereferences a pointer into an actual
+  context block.
+- **Response** — not a downstream product of the first two terms, but where
+  identity actually shows up: the act of resolving Potential+Pointer into
+  something new. If the response ran with `+aporia`, it becomes an
+  ADR-N-005 contribution, republished into Nervi — which is next turn's
+  Potential. `Response(t)` folds into `Potential(t+1)`. Nothing persists
+  between turns except what got published; this is the mechanical shape of
+  "episodic identity is a feature, not a limitation" — there is no thread
+  connecting one collapse to the next except the artifact it left behind.
+
+### Topic (perpetual) vs. session (bounded)
+
+Occitan ADR-N-004 already models a topic as longer-lived than any session
+running inside it (`Fondament ceiling ∩ topic_manifest ∩ moderator_grants`,
+with sessions nested inside topics). This spec makes that containment
+explicit as two distinct *kinds of space*:
+
+- **A session** (Amassada canvas: participants, budget, rounds) is built to
+  terminate — `Initializing → Round(n) → Complete`. Good for a bounded
+  decision: "Guilhem plus three component agents need to actually decide X."
+- **A topic** (Nervi subject space, `occitan.contribution.<component>` per
+  ADR-N-005) doesn't terminate. Agents publish into it continuously, ambient,
+  no roster, no `Complete` state.
+
+A session can be spawned from within a topic when bounded structure is
+needed; its terminal artifact folds back into the topic as a contribution
+when it completes. The topic is the perpetual field; the session is a
+bounded measurement taken on it.
+
+### Crystallization as measurement, not termination
+
+"Crystallization" (collapsing a topic's accumulated, unresolved contributions
+into one coherent answer) is a **query-time event**, not a structural
+completion. Unlike Amassada's `Complete` state, collapsing a topic doesn't
+end it — the topic keeps accumulating, and a later collapse by a different
+initiator, at a different moment, can produce a different coherent reading.
+Two trigger types:
+
+- **Initiator-triggered** — deliberate: something needs an answer now, runs
+  the aporia consumption operation already written into Guilhem's protocol
+  (`guilhem.yaml` v1.6.0, Level 4: *"become each contribution, name the
+  tensions between them, recompose"*).
+- **Gap-triggered** — the reasoning process itself, mid-synthesis, discovers
+  it's missing something and names it. `build_aporia_preamble`
+  (`fondament-core/src/resolver.rs`) already has this: step 3 of the aporia
+  protocol emits `GAP { domain, question, blocking }` when a tension surfaces
+  that no composed part owns. A gap's `domain` becomes a query key — a
+  subject or subject prefix to `nervi_subscribe` against — not a discovery
+  mechanism. This distinction matters: flat relevance-scoring is empirically
+  bad at *discovering* a latent connection nobody thought to tag for (Claim 3
+  below), but is fine at *retrieving* a connection once something has already
+  named the domain. The hard part (realizing a domain is missing) happens
+  inside reasoning; the retrieval step that follows is cheap and precise
+  because it now has an actual key.
+
+### Trajectory-conditioned scope selection
+
+Today, `SessionGraph::retrieve`'s `scope` argument is populated from
+whatever nodes are structurally marked `Frontier` (`session.rs:170`,
+`activation_weight > 0.6, epistemic_state < 0.5`) — a static property of the
+graph's current state, independent of the response just produced. This is
+the piece that's actually missing relative to "the conversation is the
+trajectory": there's no `f(response) -> next_scope` today.
+
+ADR-N-002 already built the mechanism this needs, aimed at a different
+purpose — subscriber trajectory vectors, currently used only to detect
+reversals (does this new signal diverge enough from where the subscriber has
+been to warrant priority handling). The same computation is just as valid as
+a *generator*: update the trajectory vector with the response just produced,
+then use the updated vector — not the raw response content — to select scope
+for the next collapse. Same math, reused for generation instead of only
+filtering. Not yet implemented; this spec names it as the next concrete
+piece rather than building it.
+
+## What's Already Built vs. What's New
+
+| Piece | Status |
+|---|---|
+| `SessionGraph::retrieve(scope, via_hops)` + `serialize_subset` | Built, tested |
+| Claim 1 (selection beats full transcript on quality *and* cost) | Measured, at project scope |
+| `Reference` node kind (pointer, JIT-resolved) | Built (Farga) |
+| Aporia collapse (`build_aporia_preamble`, GAP marker) | Built (Fondament) |
+| `nervi.contribution.aporia` signal + gate + subject convention | Built (ADR-N-005, this session) |
+| Topic vs. session containment | Designed (ADR-N-004), not yet a named artifact agents point at |
+| GAP → subject-as-query-key resolution | Not built |
+| Trajectory-vector-as-generator (scope selection from response) | Not built — ADR-N-002's vector exists, reused for filtering only |
+| Multi-topic addressable "grid" spanning components | Not built — today's graph is single-project scope |
+
+---
+
+## Experiment 9 — Linear Transcript Growth vs. Fresh Context Graph Per Turn
+
+### Question
+
+Take the smaller, already-buildable piece of this spec — replacing linear
+history with a per-turn extracted context graph — and measure it directly:
+across a real 5-turn technical conversation, how does token expenditure grow
+under (A) standard linear history vs. (B) a fresh context graph per turn, and
+what does it cost in answer quality?
+
+### Method
+
+A fixed 5-turn conversation about a job-queue priority design (NATS
+JetStream subjects per tier). Turn 1 establishes a specific, non-generic
+rationale (subject-based filtering avoids per-message content inspection in
+the hot path and keeps consumption order deterministic per tier). Turn 5
+asks the model to evaluate a proposal that only makes sense to push back on
+correctly if it actually recalls turn 1's rationale — a recall stress test,
+in the same spirit as the via-recovery test in the context-graph experiment.
+
+- **Condition A (linear):** standard growing `messages` list, full history
+  resent every turn.
+- **Condition B (fresh graph):** every turn is an independent single-turn
+  call with no raw prior turns. After each turn, a Haiku call distills the
+  exchange into 2-4 compact bullets (a manual proxy for graph extraction —
+  not the real Rust extractor, not vias, not GAP-triggered cross-topic
+  retrieval); the accumulated bullets, not prose transcript, are prepended as
+  system context for the next turn.
+- **Models:** generation `claude-sonnet-4-6`, extraction `claude-haiku-4-5`,
+  grading `claude-opus-4-8` (independent grader, out-of-band from either
+  condition).
+- **Tokens:** real `usage.input_tokens` / `usage.output_tokens` from actual
+  API responses, not estimates. Condition B's extraction-call tokens are
+  included in its total — they are a real cost of that strategy and would
+  disappear from a fair comparison if left out.
+- **Grading:** the independent grader scores turn 5's answer 0-10 on whether
+  it specifically engages the turn-1 rationale (content-inspection-in-the-
+  hot-path, per-tier deterministic ordering), not just generic queue-design
+  advice.
+
+A first run (discarded) used `max_tokens=1024` for generation and `200` for
+extraction; both caps were hit almost every turn — output tokens landed
+exactly on the ceiling repeatedly, and the printed extraction bullets were
+visibly truncated mid-word. That run's numbers are not reported. The
+corrected run (`max_tokens=2048` / `500`) showed no truncation and is what
+follows.
+
+### Results
+
+| | Condition A (linear) | Condition B (fresh graph) |
+|---|---|---|
+| Turn 1 total | 1,091 | 2,270 |
+| Turn 2 cumulative | 3,822 | 5,282 |
+| Turn 3 cumulative | 8,630 | 9,646 |
+| Turn 4 cumulative | 15,521 | 14,985 |
+| Turn 5 cumulative (**total**) | **24,276** | **18,396** |
+| Turn 5 quality grade (0-10) | **10** | **8** |
+
+**Token savings: 24.2% fewer total tokens for Condition B.** Note the shape
+of the crossover: Condition B starts *more* expensive per turn (turns 1-2 —
+the fixed extraction-call overhead dominates when there's little history to
+avoid resending) and only pulls ahead once linear history has grown enough
+that resending it costs more than the extraction overhead (turn 3 onward).
+For a 5-turn conversation this is a modest win; for a longer one the gap
+would widen, since Condition A's per-turn cost grows with total history while
+Condition B's stays roughly flat (extraction cost is per-turn, not
+cumulative).
+
+**Quality: Condition A won, 10 vs 8, on this specific recall stress test.**
+The grader's own reasoning shows why: Condition B's answer engaged the
+content-inspection rationale explicitly but only *"weakly touches the
+per-tier deterministic ordering point without naming it explicitly"* — the
+compact-bullet extraction preserved one of the two established rationales
+well and the other one thinly. Condition A, with the full transcript
+available, recovered both and explicitly cited *"the monitoring approach we
+designed in the previous discussion"* — a callback Condition B's answer
+didn't make.
+
+### What this does and doesn't show
+
+This is **not** a test of the full architecture above. It tests the smallest
+buildable slice — flat bullet-extraction replacing raw history — with none
+of vias, GAP-triggered cross-topic retrieval, or trajectory-conditioned scope
+selection in the loop. The result is an honest tradeoff, not a clean win: on
+this single, deliberately hard recall question, cheaper cost bought a real
+quality cost. That's a meaningfully different result from Claim 1 (which
+showed selection beating full history on *both* axes at once) — the
+difference is that Claim 1's baseline for comparison was "graph summaries
+only" against "graph summaries plus the full transcript" (summaries were a
+strict addition in the losing condition, so extra noise, not extra needed
+signal, is what full-transcript added there). Here, Condition B's *only*
+carried-forward context is the lossy bullet summary — there's no via
+mechanism recovering the second rationale the way Claim 3 showed via
+traversal recovering a latent connection flat summaries missed. This is
+consistent with, not contradictory to, this spec's own core claim: flat
+extraction without vias is expected to lose exactly this kind of connection.
+The open prediction this experiment sets up: adding via extraction (already
+built, `crates/amassada-core/src/graph/extractor.rs`) and GAP-triggered
+retrieval to Condition B should recover the second rationale without giving
+back the 24% token savings — that's the next experiment, not yet run.
+
+### Limitations
+
+One conversation, one recall question, one model per role, no repeated
+trials — a single data point in the same spirit as this codebase's other
+"strong prior, not closed question" experiments. The extraction prompt used
+here is a hand-written proxy for graph extraction, not the real extractor;
+a result from the real extractor (which already handles vias) could differ
+in either direction.
+
+## Open Follow-Ups
+
+- Rerun with the real `extractor.rs` (vias included) in place of the
+  hand-written bullet extraction, to test whether via recovery closes the
+  quality gap this experiment found.
+- Build GAP → subject-as-query-key resolution (Nervi-side): today a GAP is
+  emitted into the model's reasoning but nothing consumes it to trigger a
+  cross-topic `nervi_subscribe`.
+- Build trajectory-vector-as-generator: reuse ADR-N-002's vector to compute
+  next-turn scope from the response just produced, replacing the current
+  static `Frontier`-flag scope selection in `session.rs`.
+- Extend the addressable graph beyond one project's own `SessionGraph` to
+  span Nervi's multi-topic space, so scope selection can reach a sibling
+  component's contributions, not just this project's own history.
