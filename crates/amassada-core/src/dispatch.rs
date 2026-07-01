@@ -1,4 +1,5 @@
 use crate::error::{AmassadaError, Result};
+use fondament_core::types::StructuredReasoning;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
@@ -7,7 +8,10 @@ pub struct TurnRequest {
     pub context: String,
     pub model: String,
     pub max_tokens: u32,
-    pub thinking_budget: Option<u32>,
+    /// Provider-agnostic reasoning capability request. Dispatch translates to
+    /// Anthropic budget_tokens for claude/* models; gracefully dropped for
+    /// Gemini/OpenAI-o (they reason natively) and endpoint-routed participants.
+    pub structured_reasoning: Option<StructuredReasoning>,
     /// API key to use. When None, falls back to ANTHROPIC_API_KEY env var.
     /// Set by callers that resolve credentials via Gardian.
     pub api_key: Option<String>,
@@ -45,7 +49,8 @@ pub fn effective_max_tokens(max_tokens: u32, thinking_budget: Option<u32>) -> u3
 ///   [0] graph context, [1] agent persona — both with `cache_control: ephemeral`.
 /// When `None`, the single-block legacy behavior is preserved.
 pub fn build_request_body(req: &TurnRequest) -> serde_json::Value {
-    let max_tokens = effective_max_tokens(req.max_tokens, req.thinking_budget);
+    let thinking_budget = req.structured_reasoning.as_ref().map(|sr| sr.anthropic_budget());
+    let max_tokens = effective_max_tokens(req.max_tokens, thinking_budget);
 
     // system as array-of-blocks so the API can cache the stable system prompt across
     // turns. The cache breakpoint fires when the prompt exceeds 1024 tokens (large
@@ -67,7 +72,7 @@ pub fn build_request_body(req: &TurnRequest) -> serde_json::Value {
         "messages": [{"role": "user", "content": req.context}]
     });
 
-    if let Some(budget) = req.thinking_budget.filter(|&b| b > 0) {
+    if let Some(budget) = thinking_budget.filter(|&b| b > 0) {
         body["thinking"] = serde_json::json!({"type": "enabled", "budget_tokens": budget});
     }
 
@@ -106,7 +111,8 @@ pub async fn dispatch(req: TurnRequest) -> Result<TurnResponse> {
     // prompt-caching beta is always on; interleaved-thinking is added when thinking is budgeted.
     // Both flags must be sent in a single comma-separated anthropic-beta header — duplicate
     // header values are not supported by the Anthropic API gateway and will be rejected.
-    let beta_header = if req.thinking_budget.filter(|&b| b > 0).is_some() {
+    let thinking_budget = req.structured_reasoning.as_ref().map(|sr| sr.anthropic_budget());
+    let beta_header = if thinking_budget.filter(|&b| b > 0).is_some() {
         "prompt-caching-2024-07-31,interleaved-thinking-2025-05-14"
     } else {
         "prompt-caching-2024-07-31"

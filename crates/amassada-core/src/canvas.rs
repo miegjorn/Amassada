@@ -58,6 +58,11 @@ impl ParticipantDef {
     pub fn is_deconstructive(&self) -> bool { self.modifiers.iter().any(|m| m == "deconstructive") }
     pub fn has_endpoint(&self) -> bool { self.endpoint.is_some() }
     pub fn is_sealed(&self) -> bool { self.context_seal }
+
+    /// Translate the canvas-level raw token budget into provider-agnostic StructuredReasoning.
+    pub fn to_structured_reasoning(&self) -> Option<fondament_core::types::StructuredReasoning> {
+        self.thinking_budget.map(fondament_core::types::StructuredReasoning::from_budget)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -196,7 +201,7 @@ pub async fn select_canvas_with_llm(query: &str, library: &CanvasLibrary) -> Str
         context,
         model: "claude-haiku-4-5".into(),
         max_tokens: 32,
-        thinking_budget: None,
+        structured_reasoning: None,
         api_key: None,
         shared_context: None,
         mcp_scopes: vec![],

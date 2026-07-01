@@ -225,7 +225,7 @@ pub async fn post_message(
         context: format!("[{}]: {}", req.sender, req.content),
         model,
         max_tokens: MAX_TOKENS_PER_TURN,
-        thinking_budget: participant.thinking_budget,
+        structured_reasoning: participant.to_structured_reasoning(),
         api_key: None,
         shared_context: None,
         mcp_scopes,

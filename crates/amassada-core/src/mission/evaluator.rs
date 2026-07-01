@@ -57,7 +57,7 @@ impl CompletionEvaluator for ClaudeEvaluator {
             context,
             model: self.model.clone(),
             max_tokens: 256,
-            thinking_budget: None,
+            structured_reasoning: None,
             api_key: None,
             shared_context: None,
         mcp_scopes: vec![],

@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use fondament_core::types::StructuredReasoning;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -108,7 +109,7 @@ pub struct ActiveParticipant {
     pub turns_taken: u32,
     pub is_moderator: bool,
     pub model: Option<String>,
-    pub thinking_budget: Option<u32>,
+    pub structured_reasoning: Option<StructuredReasoning>,
     pub is_deconstructive: bool,
     /// When set, this participant's turn is dispatched to an external agent endpoint
     /// (POST {endpoint}/turn) instead of calling Anthropic directly. Carried from

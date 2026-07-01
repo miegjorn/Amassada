@@ -35,7 +35,7 @@ pub async fn synthesize_artifacts(
                 context: ctx,
                 model: SYNTHESIS_MODEL.to_string(),
                 max_tokens: 2048,
-                thinking_budget: None,
+                structured_reasoning: None,
                 api_key: None,
                 shared_context: None,
         mcp_scopes: vec![],

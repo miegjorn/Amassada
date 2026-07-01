@@ -117,7 +117,7 @@ impl<'a> RoundRunner<'a> {
                 context,
                 model,
                 max_tokens: MAX_TOKENS_PER_TURN,
-                thinking_budget: participant.thinking_budget,
+                structured_reasoning: participant.structured_reasoning.clone(),
                 api_key: None,
                 // Sealed participants must not receive graph context — their only input
                 // comes through explicitly injected moderator whispers.
@@ -252,7 +252,7 @@ impl<'a> RoundRunner<'a> {
                         context: format!("SIDEBAR QUESTION from {}:\n{}", agent_a, topic),
                         model: DEFAULT_MODEL.to_string(),
                         max_tokens: 1024,
-                        thinking_budget: None,
+                        structured_reasoning: None,
                         api_key: None,
                         shared_context: None,
                         mcp_scopes: vec![],
@@ -370,7 +370,7 @@ mod tests {
                 is_moderator: false,
                 turns_taken: 0,
                 model: None,
-                thinking_budget: None,
+                structured_reasoning: None,
                 is_deconstructive: false,
                 endpoint: None,
                 context_seal: false,
