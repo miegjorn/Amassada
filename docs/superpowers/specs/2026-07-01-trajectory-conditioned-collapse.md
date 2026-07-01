@@ -5,8 +5,9 @@
 **Extends:** `2026-06-27-multi-layer-context-graph.md` (this repo), Occitan
 ADR-N-002 (subscriber trajectory vectors), ADR-N-005 (aporia contribution
 signal)
-**Experiment:** `Cor/experiment9_trajectory_collapse.py`, results in
-`Cor/experiment9_results.json`
+**Experiment:** `Cor/experiment9_trajectory_collapse.py` (token/recall run),
+`Cor/experiment9_quality_grading.py` (independent general-quality pass on
+the same two final answers), results in `Cor/experiment9_results.json`
 
 ---
 
@@ -180,10 +181,15 @@ in the same spirit as the via-recovery test in the context-graph experiment.
   API responses, not estimates. Condition B's extraction-call tokens are
   included in its total — they are a real cost of that strategy and would
   disappear from a fair comparison if left out.
-- **Grading:** the independent grader scores turn 5's answer 0-10 on whether
-  it specifically engages the turn-1 rationale (content-inspection-in-the-
-  hot-path, per-tier deterministic ordering), not just generic queue-design
-  advice.
+- **Grading — two separate passes, not one:** (1) a recall-fidelity grade —
+  does the answer specifically engage the turn-1 rationale (content-
+  inspection-in-the-hot-path, per-tier deterministic ordering), not just
+  generic queue-design advice; (2) a general-quality grade
+  (`Cor/experiment9_quality_grading.py`) — correctness, actionability,
+  clarity, completeness — with a rubric that says nothing about recalling
+  prior turns, scored as if the answer arrived with no visibility into what
+  was or wasn't remembered. These measure different things and, as the
+  results below show, don't move together.
 
 A first run (discarded) used `max_tokens=1024` for generation and `200` for
 extraction; both caps were hit almost every turn — output tokens landed
@@ -201,7 +207,8 @@ follows.
 | Turn 3 cumulative | 8,630 | 9,646 |
 | Turn 4 cumulative | 15,521 | 14,985 |
 | Turn 5 cumulative (**total**) | **24,276** | **18,396** |
-| Turn 5 quality grade (0-10) | **10** | **8** |
+| Turn 5 recall-fidelity grade (0-10) | **10** | **8** |
+| Turn 5 general-quality grade (0-10) | **9** | **~8.75** |
 
 **Token savings: 24.2% fewer total tokens for Condition B.** Note the shape
 of the crossover: Condition B starts *more* expensive per turn (turns 1-2 —
@@ -213,15 +220,27 @@ would widen, since Condition A's per-turn cost grows with total history while
 Condition B's stays roughly flat (extraction cost is per-turn, not
 cumulative).
 
-**Quality: Condition A won, 10 vs 8, on this specific recall stress test.**
-The grader's own reasoning shows why: Condition B's answer engaged the
-content-inspection rationale explicitly but only *"weakly touches the
-per-tier deterministic ordering point without naming it explicitly"* — the
-compact-bullet extraction preserved one of the two established rationales
-well and the other one thinly. Condition A, with the full transcript
-available, recovered both and explicitly cited *"the monitoring approach we
-designed in the previous discussion"* — a callback Condition B's answer
-didn't make.
+**Two different quality questions give two different answers, and that
+distinction matters.** On recall-fidelity specifically, Condition A won, 10
+vs 8: Condition B's answer engaged the content-inspection rationale
+explicitly but only *"weakly touches the per-tier deterministic ordering
+point without naming it explicitly"* — the compact-bullet extraction
+preserved one of the two established rationales well and the other one
+thinly. Condition A, with the full transcript available, recovered both and
+explicitly cited *"the monitoring approach we designed in the previous
+discussion"* — a callback Condition B's answer didn't make.
+
+But on **general answer quality — correctness, actionability, clarity,
+completeness, graded with a rubric that says nothing about recalling prior
+turns** — the two conditions are nearly identical: 9 vs ~8.75 (Condition B's
+grading response omitted the `overall` field on this call; the average of
+its four returned sub-scores is reported instead, not backfilled). The only
+sub-dimension with any gap at all was actionability (9 vs 8). Both answers
+were independently graded as technically sound, well-organized, and
+actionable on their own merits. The 10-vs-8 recall gap does not generalize
+to a broad quality gap — Condition B's real cost was narrowly concentrated in
+strict recall of one deliberately hard-to-remember rationale, not in the
+answer's overall usefulness.
 
 ### What this does and doesn't show
 
