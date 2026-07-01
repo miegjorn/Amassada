@@ -194,6 +194,7 @@ fn parse_extraction_response(raw: &str) -> Result<GraphDelta> {
 // ── API call ──────────────────────────────────────────────────────────────────
 
 const EXTRACTION_MODEL: &str = "claude-haiku-4-5-20251001";
+// For full intermingling, this could be made per-call or config; currently Claude for graph quality. Grok support via endpoint routing for agent contexts.
 
 /// Call Haiku to extract a `GraphDelta` from a raw transcript segment.
 ///
@@ -250,24 +251,51 @@ Rules:
         "Extract the graph delta from this transcript segment:\n\n{transcript_segment}"
     );
 
-    let body = serde_json::json!({
-        "model": EXTRACTION_MODEL,
-        "max_tokens": 1024,
-        "system": [{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
-        "messages": [{"role": "user", "content": user_message}]
-    });
+    let body = if EXTRACTION_MODEL.starts_with("grok") || EXTRACTION_MODEL.starts_with("xai") {
+        let xai_key = std::env::var("XAI_API_KEY").map_err(|_| AmassadaError::Dispatch("XAI_API_KEY not set".into()))?;
+        serde_json::json!({
+            "model": EXTRACTION_MODEL,
+            "max_tokens": 1024,
+            "messages": [{"role": "user", "content": format!("{}\n\n{}", system_prompt, user_message)}]
+        });
+        // call will be adjusted below
+        serde_json::json!({})
+    } else {
+        serde_json::json!({
+            "model": EXTRACTION_MODEL,
+            "max_tokens": 1024,
+            "system": [{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
+            "messages": [{"role": "user", "content": user_message}]
+        })
+    };
 
     let client = reqwest::Client::new();
-    let resp = client
-        .post("https://api.anthropic.com/v1/messages")
-        .header("x-api-key", &api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("anthropic-beta", "prompt-caching-2024-07-31")
-        .header("content-type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| AmassadaError::Dispatch(format!("extraction request failed: {}", e)))?;
+    let resp = if EXTRACTION_MODEL.starts_with("grok") || EXTRACTION_MODEL.starts_with("xai") {
+        let xai_key = std::env::var("XAI_API_KEY").map_err(|_| AmassadaError::Dispatch("XAI_API_KEY not set".into()))?;
+        client
+            .post("https://api.x.ai/v1/chat/completions")
+            .header("Authorization", format!("Bearer {}", xai_key))
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({
+                "model": EXTRACTION_MODEL,
+                "max_tokens": 1024,
+                "messages": [{"role": "user", "content": format!("{}\n\n{}", system_prompt, user_message)}]
+            }))
+            .send()
+            .await
+            .map_err(|e| AmassadaError::Dispatch(format!("extraction request failed: {}", e)))?
+    } else {
+        client
+            .post("https://api.anthropic.com/v1/messages")
+            .header("x-api-key", &api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("anthropic-beta", "prompt-caching-2024-07-31")
+            .header("content-type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AmassadaError::Dispatch(format!("extraction request failed: {}", e)))?
+    };
 
     if !resp.status().is_success() {
         let status = resp.status();
