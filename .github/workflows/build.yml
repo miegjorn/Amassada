@@ -4,8 +4,22 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'Dockerfile'
+      - 'canvases/**'
+      - '.github/workflows/build.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'Dockerfile'
+      - 'canvases/**'
+      - '.github/workflows/build.yml'
 
 permissions:
   contents: read
