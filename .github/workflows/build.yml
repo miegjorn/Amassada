@@ -83,4 +83,5 @@ jobs:
           git config user.name "Occitan CI"
           git add deploy/charts/occitan/values.yaml
           git diff --staged --quiet && echo "no-op" || \
-            git commit -m "chore(amassada): deploy sha-${GITHUB_SHA:0:7}" && git push
+            git commit -m "chore(amassada): deploy sha-${GITHUB_SHA:0:7}" && \
+            git pull --rebase origin main && git push
