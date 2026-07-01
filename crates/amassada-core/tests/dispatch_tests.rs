@@ -143,3 +143,41 @@ fn turn_http_response_deserializes_with_token_counts() {
     assert_eq!(resp.input_tokens, 120);
     assert_eq!(resp.output_tokens, 35);
 }
+
+/// Guard test for model-agnostic complementary support.
+/// Non-claude models must be rejected on direct path so that callers use the
+/// endpoint field on participants (per canvas) to route to Grok-capable agents.
+/// This keeps the pure Anthropic dispatch path untouched.
+#[tokio::test]
+async fn direct_dispatch_rejects_grok_and_xai_models_for_complementary_use() {
+    let req = TurnRequest {
+        system_prompt: "test".into(),
+        context: "hi".into(),
+        model: "grok-3".into(),
+        max_tokens: 100,
+        thinking_budget: None,
+        api_key: Some("dummy".into()),
+        shared_context: None,
+        mcp_scopes: vec![],
+    };
+    let err = amassada_core::dispatch::dispatch(req).await.unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("direct dispatch only supports anthropic/claude"));
+    assert!(msg.contains("grok/xai use endpoint"));
+}
+
+#[tokio::test]
+async fn direct_dispatch_rejects_xai_prefixed_models() {
+    let req = TurnRequest {
+        system_prompt: "test".into(),
+        context: "hi".into(),
+        model: "xai:grok-beta".into(),
+        max_tokens: 100,
+        thinking_budget: None,
+        api_key: Some("dummy".into()),
+        shared_context: None,
+        mcp_scopes: vec![],
+    };
+    let err = amassada_core::dispatch::dispatch(req).await.unwrap_err();
+    assert!(err.to_string().contains("direct dispatch only supports"));
+}

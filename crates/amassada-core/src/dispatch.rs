@@ -76,7 +76,20 @@ pub fn build_request_body(req: &TurnRequest) -> serde_json::Value {
 
 /// Calls the Anthropic Messages API directly via reqwest.
 /// Uses the user-message-only format (no prefill, no multi-turn list).
+///
+/// For model-agnostic complementary support (Grok + Anthropic together):
+/// Direct dispatch is only for Anthropic/Claude models. For grok* / xai* models,
+/// participants must use the `endpoint` mechanism (see TurnRequest and canvas config).
+/// This allows running different models for different stances/participants without
+/// breaking the existing Anthropic path.
 pub async fn dispatch(req: TurnRequest) -> Result<TurnResponse> {
+    if !req.model.starts_with("claude") && !req.model.starts_with("anthropic") {
+        return Err(AmassadaError::Dispatch(format!(
+            "direct dispatch only supports anthropic/claude models (got '{}'); for grok/xai use endpoint in the participant/canvas config for complementary multi-model runs",
+            req.model
+        )));
+    }
+
     let api_key = req.api_key.clone()
         .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
         .ok_or_else(|| AmassadaError::Dispatch("ANTHROPIC_API_KEY not set".into()))?;

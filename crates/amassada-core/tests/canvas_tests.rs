@@ -75,6 +75,15 @@ initial_participants:
     endpoint: "http://guilhem.agents.svc.cluster.local:8080"
   - persona: builder
     domain: fondament/senior-engineer
+  # Example of complementary multi-model (Anthropic + Grok):
+  # One participant uses grok-3 + endpoint for a reviewer/adversarial role.
+  # Another can stay on claude (no endpoint => direct Anthropic dispatch).
+  # Note: domain uses a real Fondament definition (code-reviewer) so that the
+  # example is valid for both parsing tests and potential future runtime use.
+  - persona: grok-adversary
+    domain: fondament/code-reviewer
+    model: "grok-3"
+    endpoint: "http://grok-adversary.agents.svc.cluster.local:8080"
 budget:
   total_tokens: 100000
   pools:
@@ -107,4 +116,10 @@ output:
     let builder = &canvas.initial_participants[1];
     assert!(!builder.has_endpoint(), "participant without endpoint must report no endpoint");
     assert_eq!(builder.endpoint, None);
+
+    // Mixed model participant (grok via endpoint)
+    let grok_adv = &canvas.initial_participants[2];
+    assert_eq!(grok_adv.model.as_deref(), Some("grok-3"));
+    assert!(grok_adv.has_endpoint());
+    assert_eq!(grok_adv.endpoint.as_deref(), Some("http://grok-adversary.agents.svc.cluster.local:8080"));
 }

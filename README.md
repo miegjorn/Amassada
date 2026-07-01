@@ -206,7 +206,7 @@ initial_participants:
 
 - `persona`: the cognitive stance (`builder`, `breaker`, `adversarial`, `moderator`, `human`, …). Setting `persona: moderator` is the only mechanism that grants the moderator block set.
 - `domain`: the context body drawn from Fondament (primitive) or Farga (project facet). Passed verbatim as `domain_context` in `build_system_prompt()`.
-- `model`: optional L2 model override. The Moderator can issue a further L3 override mid-session via `[MODEL: model-id for: agent-id]`.
+- `model`: optional L2 model override (e.g. `claude-sonnet-4-6` or `grok-3`). Defaults to claude. For complementary runs (Anthropic + Grok/xAI in same session, different stances/participants), set `model: grok-*` + `endpoint: "..."` on the participant. Direct `dispatch` path remains exclusively for `claude*` / `anthropic*` models (guard in dispatch.rs). The Moderator can issue a further L3 override mid-session via `[MODEL: model-id for: agent-id]`. See Caissa entrypoint for grok task mode and MODEL env.
 - `authority: binding`: marks the human participant as authoritative; the engine never allows agent or Moderator actions to override confirmed human decisions.
 - `modifiers`: optional list of behavioural modifiers. Currently the only recognised value is `deconstructive`, which injects the SessionGraph frontier context into the system prompt preamble so the participant receives graph-state awareness before the main domain context.
 - `endpoint`: optional HTTP base URL for an external agent pod. When set, turns for this participant are dispatched via `POST {endpoint}/turn` (the `TurnHttpRequest` / `TurnHttpResponse` protocol) instead of calling Anthropic directly. Used for Guilhem and other Occitan agents that own their own MCP tool access.
