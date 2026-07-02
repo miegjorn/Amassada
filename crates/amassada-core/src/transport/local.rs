@@ -41,10 +41,25 @@ impl Transport for LocalTransport {
     }
 
     async fn consult(&self, req: &ConsultRequest) -> Result<ConsultResponse> {
-        // LocalTransport doesn't dispatch real consultations — stub for CLI
+        use crate::dispatch::{self, TurnRequest};
+        const CONSULT_MAX_TOKENS: u32 = 1024;
+
+        let turn_req = TurnRequest {
+            system_prompt: req.system_prompt.clone(),
+            context: format!("[CONSULT from {}]: {}", req.requester, req.question),
+            model: req.model.clone(),
+            max_tokens: CONSULT_MAX_TOKENS,
+            structured_reasoning: None,
+            api_key: None,
+            shared_context: None,
+            mcp_scopes: vec![],
+        };
+
+        let resp = dispatch::dispatch(turn_req).await?;
         Ok(ConsultResponse {
             from: req.target.clone(),
-            content: "[consultation not available in local mode]".into(),
+            content: resp.text,
+            tokens_used: resp.input_tokens + resp.output_tokens,
         })
     }
 
