@@ -327,6 +327,112 @@ Rules:
     parse_extraction_response(raw_content)
 }
 
+// ── Trajectory-conditioned scope selection ─────────────────────────────────────
+//
+// Implements the piece named as "not built" in
+// `docs/superpowers/specs/2026-07-01-trajectory-conditioned-collapse.md`:
+// `f(response) -> next_scope`, replacing the static Frontier-flag scope
+// selection in `session.rs` with a selection conditioned on the response just
+// produced. The spec's own text defers the trajectory vector's concrete
+// representation ("embedding model, decay/recency weighting... deferred; not
+// required for Epic 1's single-sensor scope") and ADR-N-002 (the vector
+// mechanism the spec proposed reusing) has no matching code anywhere in Nervi
+// as of this writing — there is no embedding infrastructure in this stack to
+// reuse. This implements the same call-by-call judgment approach `extract_delta`
+// above already uses (a cheap Haiku call) rather than inventing vector math
+// from scratch: given the response just produced and the graph's current
+// nodes, ask which nodes are relevant scope for the next round.
+
+/// Ask Haiku which of `nodes` are relevant scope for the round following
+/// `response_text`. Returns `Ok(vec![])` (not an error) when the model finds
+/// no relevant nodes — a real "nothing carries forward" judgment, distinct
+/// from a call failure. Errors are non-fatal by this crate's convention —
+/// callers should fall back to the static Frontier-flag selection.
+pub async fn select_scope_from_response(
+    response_text: &str,
+    nodes: &[Node],
+    api_key: Option<String>,
+) -> Result<Vec<NodeId>> {
+    let api_key = api_key
+        .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
+        .ok_or_else(|| AmassadaError::Dispatch("ANTHROPIC_API_KEY not set".into()))?;
+
+    if nodes.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let node_list = nodes
+        .iter()
+        .map(|n| format!("{}: {}", n.id.0, n.summary))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let system_prompt = "You are a context-relevance judge for a multi-round reasoning session. \
+Given the response just produced in this round and a list of existing context \
+nodes (id: summary), select which node IDs are relevant scope for continuing \
+this line of reasoning in the NEXT round — a real trajectory judgment, not a \
+static flag. Return ONLY valid JSON, no markdown, no code fences, matching \
+this schema exactly: {\"node_ids\": [\"N1\", \"N3\"]}. Return an empty array \
+when nothing in the list is relevant to where the response just took the \
+conversation.";
+
+    let user_message = format!(
+        "Response just produced this round:\n{response_text}\n\nExisting nodes:\n{node_list}\n\nWhich node IDs are relevant scope for the next round?"
+    );
+
+    let body = serde_json::json!({
+        "model": EXTRACTION_MODEL,
+        "max_tokens": 512,
+        "system": [{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
+        "messages": [{"role": "user", "content": user_message}]
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post("https://api.anthropic.com/v1/messages")
+        .header("x-api-key", &api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("anthropic-beta", "prompt-caching-2024-07-31")
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| AmassadaError::Dispatch(format!("scope selection request failed: {}", e)))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(AmassadaError::Dispatch(
+            format!("scope selection API error {}: {}", status, text),
+        ));
+    }
+
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| AmassadaError::Dispatch(format!("scope selection response parse: {}", e)))?;
+
+    let raw_content = json["content"]
+        .as_array()
+        .and_then(|blocks| blocks.iter().find(|b| b["type"].as_str() == Some("text")))
+        .and_then(|b| b["text"].as_str())
+        .ok_or_else(|| {
+            AmassadaError::Dispatch("scope selection: no text content block in API response".into())
+        })?;
+
+    parse_scope_selection_response(raw_content)
+}
+
+fn parse_scope_selection_response(raw: &str) -> Result<Vec<NodeId>> {
+    #[derive(Deserialize)]
+    struct RawScope {
+        node_ids: Vec<String>,
+    }
+    let parsed: RawScope = serde_json::from_str(raw)
+        .map_err(|e| AmassadaError::Dispatch(format!("scope selection parse error: {}", e)))?;
+    Ok(parsed.node_ids.into_iter().map(NodeId).collect())
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -443,5 +549,27 @@ mod tests {
             NodeType::Supporting,
             "layer=semantic must override node_type to Supporting for routing"
         );
+    }
+
+    #[test]
+    fn parse_scope_selection_response_returns_node_ids() {
+        let json = r#"{"node_ids": ["N1", "N3"]}"#;
+        let ids = parse_scope_selection_response(json).expect("must parse");
+        assert_eq!(ids, vec![NodeId("N1".to_string()), NodeId("N3".to_string())]);
+    }
+
+    #[test]
+    fn parse_scope_selection_response_empty_array_is_ok_not_err() {
+        // A real "nothing carries forward" judgment must parse as Ok(vec![]),
+        // distinct from a call/parse failure.
+        let json = r#"{"node_ids": []}"#;
+        let ids = parse_scope_selection_response(json).expect("empty selection must still parse");
+        assert!(ids.is_empty());
+    }
+
+    #[test]
+    fn parse_scope_selection_response_invalid_json_returns_err() {
+        let result = parse_scope_selection_response("not json at all");
+        assert!(result.is_err(), "invalid JSON must return Err");
     }
 }

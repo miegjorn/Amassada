@@ -1,5 +1,5 @@
 pub mod extractor;
-pub use extractor::{extract_delta, GraphDelta, NodeUpdate};
+pub use extractor::{extract_delta, select_scope_from_response, GraphDelta, NodeUpdate};
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;

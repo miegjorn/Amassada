@@ -8,7 +8,7 @@ use crate::channels::whisper::WhisperQueue;
 use crate::context::ContextBuilder;
 use crate::error::Result;
 use crate::farga;
-use crate::graph::{extract_delta, GraphDelta, NodeId, NodeType, NodeUpdate, SessionGraph};
+use crate::graph::{extract_delta, select_scope_from_response, GraphDelta, NodeId, NodeType, NodeUpdate, SessionGraph};
 use crate::round::RoundRunner;
 use crate::synthesis::synthesize_artifacts;
 use crate::transport::Transport;
@@ -156,6 +156,14 @@ impl SessionEngine {
 
         let mut state = SessionState::Running;
         let mut current_round = 1u32;
+        // Trajectory-conditioned scope for the round about to run, carried
+        // forward from the PREVIOUS round's response (see
+        // docs/superpowers/specs/2026-07-01-trajectory-conditioned-collapse.md,
+        // "f(response) -> next_scope" -- the piece that spec named as not yet
+        // built). `None` on round 1 (nothing produced yet) and whenever
+        // selection fails or returns empty, falling back to the static
+        // Frontier-flag selection below.
+        let mut next_scope_ids: Option<Vec<NodeId>> = None;
 
         while !state.is_terminal() && current_round <= active_canvas.rounds.max {
             // Skip shared_context only when the graph is genuinely empty (new
@@ -167,14 +175,21 @@ impl SessionEngine {
             let shared_context = if current_round == 1 && self.graph.version == 0 {
                 None
             } else {
-                let frontier_ids: Vec<NodeId> = self.graph.layers.causal.nodes.values()
-                    .filter(|n| n.node_type == NodeType::Frontier)
-                    .map(|n| n.id.clone())
-                    .collect();
-                if frontier_ids.is_empty() {
+                // Prefer the trajectory-conditioned scope selected from the
+                // previous round's response; fall back to the static
+                // Frontier-flag selection on round 1 or when the previous
+                // round's selection came back empty/failed.
+                let scope_ids: Vec<NodeId> = match &next_scope_ids {
+                    Some(ids) if !ids.is_empty() => ids.clone(),
+                    _ => self.graph.layers.causal.nodes.values()
+                        .filter(|n| n.node_type == NodeType::Frontier)
+                        .map(|n| n.id.clone())
+                        .collect(),
+                };
+                if scope_ids.is_empty() {
                     None
                 } else {
-                    Some(self.graph.retrieve(&frontier_ids, 1))
+                    Some(self.graph.retrieve(&scope_ids, 1))
                 }
             };
 
@@ -215,6 +230,25 @@ impl SessionEngine {
                         tracing::warn!("graph extraction failed (non-fatal): {}", e);
                     }
                 }
+
+                // 3. Trajectory-conditioned scope selection for the NEXT round:
+                //    f(response) -> next_scope, using the round's own response
+                //    (its transcript) against the graph as it stands after the
+                //    extraction above. Non-fatal — a failure or empty result
+                //    just means next round falls back to the static
+                //    Frontier-flag selection.
+                let causal_nodes: Vec<_> = self.graph.layers.causal.nodes.values().cloned().collect();
+                match select_scope_from_response(&result.round_transcript, &causal_nodes, None).await {
+                    Ok(ids) => {
+                        next_scope_ids = Some(ids);
+                    }
+                    Err(e) => {
+                        tracing::warn!("trajectory-conditioned scope selection failed (non-fatal, falling back to Frontier-flag selection): {}", e);
+                        next_scope_ids = None;
+                    }
+                }
+            } else {
+                next_scope_ids = None;
             }
 
             // ─────────────────────────────────────────────────────────────────
