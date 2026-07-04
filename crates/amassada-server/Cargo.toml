@@ -2,6 +2,7 @@
 name = "amassada-server"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 
 [dependencies]
 amassada-core = { path = "../amassada-core" }
