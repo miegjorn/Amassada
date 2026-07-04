@@ -128,8 +128,27 @@ fn parse_via_type(s: &str) -> ViaType {
 /// When `layer == "semantic"`, the node_type is promoted to
 /// `NodeType::Supporting` so that `apply_delta` routes the node to
 /// `layers.semantic` without needing to carry separate layer metadata.
+/// Haiku is instructed to return bare JSON, but routinely wraps it in a
+/// ```` ```json ... ``` ```` fence (or bare ``` ```` ```` ````) regardless —
+/// a well-documented LLM habit, not something the prompt can reliably stop.
+/// `serde_json::from_str` on a fenced response fails as "expected value at
+/// line 1 column 1" (the backtick isn't valid JSON), which is exactly the
+/// non-fatal warning seen firing on nearly every real turn. Strip a
+/// surrounding fence, if present, before parsing.
+fn strip_json_fence(raw: &str) -> &str {
+    let trimmed = raw.trim();
+    let Some(after_open) = trimmed.strip_prefix("```") else {
+        return trimmed;
+    };
+    let after_open = after_open
+        .strip_prefix("json")
+        .unwrap_or(after_open)
+        .trim_start_matches(['\n', '\r']);
+    after_open.strip_suffix("```").unwrap_or(after_open).trim()
+}
+
 fn parse_extraction_response(raw: &str) -> Result<GraphDelta> {
-    let raw_delta: RawDelta = serde_json::from_str(raw)
+    let raw_delta: RawDelta = serde_json::from_str(strip_json_fence(raw))
         .map_err(|e| AmassadaError::Dispatch(format!("extraction parse error: {}", e)))?;
 
     let new_nodes = raw_delta
@@ -428,7 +447,7 @@ fn parse_scope_selection_response(raw: &str) -> Result<Vec<NodeId>> {
     struct RawScope {
         node_ids: Vec<String>,
     }
-    let parsed: RawScope = serde_json::from_str(raw)
+    let parsed: RawScope = serde_json::from_str(strip_json_fence(raw))
         .map_err(|e| AmassadaError::Dispatch(format!("scope selection parse error: {}", e)))?;
     Ok(parsed.node_ids.into_iter().map(NodeId).collect())
 }
@@ -538,6 +557,20 @@ mod tests {
     }
 
     #[test]
+    fn parse_extraction_response_strips_json_fence() {
+        let fenced = "```json\n{\"nodes\":[],\"edges\":[],\"vias\":[],\"updates\":[]}\n```";
+        let delta = parse_extraction_response(fenced).expect("fenced JSON must parse");
+        assert!(delta.new_nodes.is_empty());
+    }
+
+    #[test]
+    fn parse_extraction_response_strips_bare_fence() {
+        let fenced = "```\n{\"nodes\":[],\"edges\":[],\"vias\":[],\"updates\":[]}\n```";
+        let delta = parse_extraction_response(fenced).expect("bare-fenced JSON must parse");
+        assert!(delta.new_nodes.is_empty());
+    }
+
+    #[test]
     fn parse_extraction_response_semantic_layer_sets_supporting() {
         let json = r#"{
             "nodes": [{"id":"S1","node_type":"axiom","summary":"semantic node forced to supporting","layer":"semantic","activation_weight":0.5,"epistemic_state":0.3}],
@@ -571,5 +604,12 @@ mod tests {
     fn parse_scope_selection_response_invalid_json_returns_err() {
         let result = parse_scope_selection_response("not json at all");
         assert!(result.is_err(), "invalid JSON must return Err");
+    }
+
+    #[test]
+    fn parse_scope_selection_response_strips_json_fence() {
+        let fenced = "```json\n{\"node_ids\": [\"N1\"]}\n```";
+        let ids = parse_scope_selection_response(fenced).expect("fenced JSON must parse");
+        assert_eq!(ids, vec![NodeId("N1".to_string())]);
     }
 }
