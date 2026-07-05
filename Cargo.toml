@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/amassada-core", "crates/amassada-server"]
+members = ["crates/amassada-core"]
 resolver = "2"
 
 [workspace.package]

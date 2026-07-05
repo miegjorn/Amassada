@@ -1,3 +1,25 @@
+> **Partial retirement, 2026-07-04.** `amassada-server` (the standalone HTTP/WS
+> service, its `canvases/`-serving multi-tenant project registry, its
+> `Dockerfile`, and its CI build) is retired. Amassada's job as a
+> user/agent-facing *service* — decomposing a hard question into
+> independently-resolved voices and recomposing them — is now the
+> `occitan/amassada` Fondament skill, available to every agent, backed by
+> `corrier-core::agent_subjects`'s mechanical layer. See
+> `Occitan/docs/superpowers/specs/2026-07-05-amassada-as-agent-skill-design.md`.
+> This repo's `amassada-agent` pod (a component agent, same shape as the other
+> 8) is unaffected and continues to run from Caissa's `component-agents` chart.
+>
+> **`amassada-core` itself is not retired.** It continues as a library crate:
+> Caissa's `caissa-core::graph_context` and Charradissa's `charradissa-core`
+> (transport, farcaster, project-context modules) both depend on it directly
+> for `SessionGraph`, the session/round/moderator/budget/synthesis engine, and
+> the `Transport` trait — none of that was touched here. A further reduction
+> of `amassada-core`'s surface is expected pending a separate redesign of the
+> Farcaster subsystem, but that has not happened yet; treat everything below
+> this notice except the removed HTTP/WS/CLI-server layer as current.
+
+---
+
 # Amassada — Multi-Agent Session Engine
 
 **Amassada** (Occitan: *gathering*) is the session orchestration engine of the Occitan stack.
